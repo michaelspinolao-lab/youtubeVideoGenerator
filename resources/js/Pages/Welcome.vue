@@ -8,8 +8,8 @@
             <h1 class="text-2xl font-bold text-white">YouTube Video Generator</h1>
           </div>
           <div class="flex items-center space-x-4">
-            <Link :href="route('google.redirect')" class="bg-white text-gray-900 hover:bg-gray-100 px-4 py-2 rounded-lg font-medium transition duration-200">
-              Get Started
+            <Link :href="route('demo.login')" class="bg-white text-gray-900 hover:bg-gray-100 px-4 py-2 rounded-lg font-medium transition duration-200">
+              Try Demo
             </Link>
           </div>
         </div>
@@ -36,6 +36,12 @@
               <path d="M12.48 10.92v3.28h7.84c-.24 1.84-.853 3.187-1.787 4.133-1.147 1.147-2.933 2.4-6.053 2.4-4.827 0-8.6-3.893-8.6-8.72s3.773-8.72 8.6-8.72c2.6 0 4.507 1.027 5.907 2.347l2.307-2.307C18.747 1.44 16.133 0 12.48 0 5.867 0 .307 5.387.307 12s5.56 12 12.173 12c3.573 0 6.267-1.173 8.373-3.36 2.16-2.16 2.84-5.213 2.84-7.667 0-.76-.053-1.467-.173-2.053H12.48z"/>
             </svg>
             Start with Google
+          </Link>
+          <Link :href="route('demo.login')" class="inline-flex items-center px-8 py-4 border border-white text-lg font-medium rounded-lg text-white hover:bg-white hover:text-gray-900 transition duration-200">
+            <svg class="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+            </svg>
+            Try Demo
           </Link>
           <a href="#features" class="inline-flex items-center px-8 py-4 border border-white text-lg font-medium rounded-lg text-white hover:bg-white hover:text-gray-900 transition duration-200">
             Learn More
@@ -161,11 +167,11 @@
         <p class="text-xl text-gray-300 mb-8 max-w-2xl mx-auto">
           Join thousands of creators who are already using AI to scale their video production.
         </p>
-        <Link :href="route('google.redirect')" class="inline-flex items-center px-8 py-4 border border-transparent text-lg font-medium rounded-lg text-white bg-indigo-600 hover:bg-indigo-700 transition duration-200">
-          <svg class="h-5 w-5 mr-2" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M12.48 10.92v3.28h7.84c-.24 1.84-.853 3.187-1.787 4.133-1.147 1.147-2.933 2.4-6.053 2.4-4.827 0-8.6-3.893-8.6-8.72s3.773-8.72 8.6-8.72c2.6 0 4.507 1.027 5.907 2.347l2.307-2.307C18.747 1.44 16.133 0 12.48 0 5.867 0 .307 5.387.307 12s5.56 12 12.173 12c3.573 0 6.267-1.173 8.373-3.36 2.16-2.16 2.84-5.213 2.84-7.667 0-.76-.053-1.467-.173-2.053H12.48z"/>
+        <Link :href="route('demo.login')" class="inline-flex items-center px-8 py-4 border border-transparent text-lg font-medium rounded-lg text-white bg-indigo-600 hover:bg-indigo-700 transition duration-200">
+          <svg class="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
           </svg>
-          Get Started Free
+          Try Demo Now
         </Link>
       </div>
     </div>

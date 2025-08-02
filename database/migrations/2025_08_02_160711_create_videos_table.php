@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('videos', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
-            $table->foreignId('youtube_channel_id')->nullable()->constrained()->onDelete('set null');
+            $table->unsignedBigInteger('youtube_channel_id')->nullable();
             $table->string('title');
             $table->text('description')->nullable();
             $table->string('topic'); // User input topic

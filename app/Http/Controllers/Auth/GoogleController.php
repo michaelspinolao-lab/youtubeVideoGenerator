@@ -8,23 +8,19 @@ use App\Models\YoutubeChannel;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Laravel\Socialite\Facades\Socialite;
-use Google_Client;
-use Google_Service_YouTube;
 
 class GoogleController extends Controller
 {
     public function redirect(): RedirectResponse
     {
-        return Socialite::driver('google')
-            ->scopes([
-                'openid',
-                'profile',
-                'email',
-                'https://www.googleapis.com/auth/youtube.upload',
-                'https://www.googleapis.com/auth/youtube.readonly'
-            ])
-            ->redirect();
+        // Check if Google OAuth is configured
+        if (!config('services.google.client_id') || config('services.google.client_id') === 'your_google_client_id_here') {
+            return redirect('/login')->with('error', 'Google OAuth is not configured. Please set up your Google OAuth credentials in the .env file.');
+        }
+
+        return Socialite::driver('google')->redirect();
     }
 
     public function callback(): RedirectResponse
@@ -46,8 +42,8 @@ class GoogleController extends Controller
 
             Auth::login($user);
 
-            // Fetch and store YouTube channel information
-            $this->syncYouTubeChannels($user);
+            // TODO: Fetch and store YouTube channel information
+            // $this->syncYouTubeChannels($user);
 
             return redirect()->intended('/dashboard');
 
@@ -58,6 +54,11 @@ class GoogleController extends Controller
 
     protected function syncYouTubeChannels(User $user): void
     {
+        // TODO: Implement YouTube channel sync when Google API client is installed
+        // For now, just log that we would sync channels
+        Log::info('YouTube channel sync would happen here for user: ' . $user->id);
+
+        /*
         try {
             $client = new Google_Client();
             $client->setAccessToken($user->google_access_token);
@@ -81,8 +82,9 @@ class GoogleController extends Controller
             }
         } catch (\Exception $e) {
             // Log error but don't fail the authentication
-            \Log::error('Failed to sync YouTube channels: ' . $e->getMessage());
+            Log::error('Failed to sync YouTube channels: ' . $e->getMessage());
         }
+        */
     }
 
     public function logout(Request $request): RedirectResponse

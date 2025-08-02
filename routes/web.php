@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Auth\GoogleController;
+use App\Http\Controllers\Auth\DemoController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\VideoController;
 use App\Http\Controllers\YoutubeChannelController;
@@ -19,7 +20,9 @@ Route::get('/', function () {
 })->name('welcome');
 
 Route::get('/login', function () {
-    return Inertia::render('Auth/Login');
+    return Inertia::render('Auth/Login', [
+        'error' => session('error')
+    ]);
 })->name('login');
 
 // Google OAuth Routes
@@ -27,6 +30,9 @@ Route::prefix('auth/google')->group(function () {
     Route::get('/', [GoogleController::class, 'redirect'])->name('google.redirect');
     Route::get('/callback', [GoogleController::class, 'callback'])->name('google.callback');
 });
+
+// Demo Login Route (for testing without OAuth)
+Route::get('/demo-login', [DemoController::class, 'loginDemo'])->name('demo.login');
 
 Route::post('/logout', [GoogleController::class, 'logout'])->name('logout');
 
