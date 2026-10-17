@@ -1,0 +1,42 @@
+# Apply only after confirming service billing and supplying credentials.
+services:
+  - type: web
+    name: videogenius-personal
+    runtime: docker
+    repo: https://github.com/michaelspinolao-lab/youtubeVideoGenerator
+    branch: master
+    plan: 1c-2g
+    region: frankfurt
+    dockerfilePath: ./Dockerfile.personal
+    dockerContext: .
+    healthCheckPath: /up
+    autoDeploy: false
+    disk:
+      name: videogenius-data
+      mountPath: /var/www/html/storage
+      sizeGB: 5
+    envVars:
+      - key: APP_NAME
+        value: VideoGenius
+      - key: APP_ENV
+        value: production
+      - key: APP_DEBUG
+        value: "false"
+      - key: SESSION_SECURE_COOKIE
+        value: "true"
+      - key: APP_URL
+        sync: false
+      - key: APP_KEY
+        sync: false
+      - key: ALLOWED_LOGIN_EMAIL
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        sync: false
+      - key: PIXABAY_API_KEY
+        sync: false
+# Gemini is optional: add GEMINI_API_KEY and GEMINI_MODEL to generate scripts.
+# With custom scripts, Gemini is not called.
