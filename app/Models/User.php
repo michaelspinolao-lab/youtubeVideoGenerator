@@ -45,7 +45,7 @@ class User extends Authenticatable
      */
     protected $hidden = [
         'password',
-        'remember_token',
+        'remember_token', 'google_access_token', 'google_refresh_token', 'youtube_access_token', 'youtube_refresh_token',
     ];
 
     /**
@@ -57,6 +57,10 @@ class User extends Authenticatable
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
         'google_scopes' => 'array',
+        'google_access_token' => 'encrypted',
+        'google_refresh_token' => 'encrypted',
+        'youtube_access_token' => 'encrypted',
+        'youtube_refresh_token' => 'encrypted',
         'google_token_expires_at' => 'datetime',
         'quota_reset_at' => 'datetime',
         'is_admin' => 'boolean',
@@ -80,7 +84,7 @@ class User extends Authenticatable
     public function canGenerateVideo(): bool
     {
         // Reset quota if it's a new month
-        if ($this->quota_reset_at && $this->quota_reset_at->isBefore(now()->startOfMonth())) {
+        if (! $this->quota_reset_at || $this->quota_reset_at->isBefore(now()->startOfMonth())) {
             $this->update([
                 'videos_generated_this_month' => 0,
                 'quota_reset_at' => now()->endOfMonth(),

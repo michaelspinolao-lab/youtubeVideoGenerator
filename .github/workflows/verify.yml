@@ -1,0 +1,48 @@
+name: Verify personal video generator
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, pdo_sqlite, dom
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: composer install --no-interaction --prefer-dist
+      - run: npm ci && npm run build
+      - run: php vendor/bin/phpunit --filter VideoFlowTest
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: pip install -r scripts/requirements.txt
+      - run: python -m unittest discover -s tests/python -v
+      - run: docker build -f Dockerfile.personal -t videogenius-test .
+      - name: Smoke test container startup and persistence
+        run: |
+          docker volume create videogenius-test-data
+          docker run -d --name videogenius-smoke -p 8080:10000 -v videogenius-test-data:/var/www/html/storage -e APP_KEY=base64:eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHg= -e APP_URL=http://localhost:8080 -e ALLOWED_LOGIN_EMAIL=test@example.com videogenius-test
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://localhost:8080/up; then break; fi
+            sleep 2
+          done
+          curl -fsS http://localhost:8080/up
+          curl -fsS http://localhost:8080/login
+          docker exec videogenius-smoke test -s storage/database.sqlite
+          docker restart videogenius-smoke
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://localhost:8080/up; then break; fi
+            sleep 2
+          done
+          curl -fsS http://localhost:8080/up
+          docker exec videogenius-smoke test -s storage/database.sqlite
+      - name: Container logs
+        if: always()
+        run: docker logs videogenius-smoke || true

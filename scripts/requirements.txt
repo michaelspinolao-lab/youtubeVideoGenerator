@@ -1,8 +1,2 @@
-# Requirements file for Python scripts
-# Install these packages in your Python environment or Docker container
-
-# For text-to-speech with gTTS
-gtts==2.5.1
-
-# For HTTP requests
-requests==2.31.0
+gtts==2.5.4
+requests==2.32.5

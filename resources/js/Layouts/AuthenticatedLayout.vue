@@ -42,8 +42,8 @@
                       class="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-gray-500 bg-white hover:text-gray-700 focus:outline-none transition ease-in-out duration-150"
                     >
                       <img
-                        v-if="$page.props.auth.user.avatar"
-                        :src="$page.props.auth.user.avatar"
+                        v-if="$page.props.auth.user.avatar_url"
+                        :src="$page.props.auth.user.avatar_url"
                         :alt="$page.props.auth.user.name"
                         class="h-6 w-6 rounded-full mr-2"
                       />

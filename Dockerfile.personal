@@ -1,0 +1,24 @@
+FROM php:8.3-apache-bookworm AS phpbase
+RUN apt-get update && apt-get install -y --no-install-recommends git unzip libonig-dev libsqlite3-dev ffmpeg python3-venv supervisor && rm -rf /var/lib/apt/lists/* \
+    && docker-php-ext-install pdo_sqlite mbstring pcntl \
+    && a2enmod rewrite \
+    && sed -i 's/80/10000/g' /etc/apache2/ports.conf /etc/apache2/sites-available/000-default.conf
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+WORKDIR /var/www/html
+COPY . .
+RUN composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader \
+    && python3 -m venv /opt/video-python \
+    && /opt/video-python/bin/pip install --no-cache-dir -r scripts/requirements.txt
+FROM node:22-bookworm-slim AS assets
+WORKDIR /build
+COPY --from=phpbase /var/www/html /build
+RUN npm ci && npm run build
+FROM phpbase
+COPY --from=assets /build/public/build /var/www/html/public/build
+COPY docker/personal/apache.conf /etc/apache2/sites-available/000-default.conf
+COPY docker/personal/supervisor.conf /etc/supervisor/conf.d/video.conf
+COPY docker/personal/start.sh /usr/local/bin/start-video
+RUN chmod +x /usr/local/bin/start-video
+ENV APP_ENV=production APP_DEBUG=false DB_CONNECTION=sqlite DB_DATABASE=/var/www/html/storage/database.sqlite QUEUE_CONNECTION=database SESSION_DRIVER=file CACHE_STORE=file VIDEO_PYTHON=/opt/video-python/bin/python
+EXPOSE 10000
+CMD ["/usr/local/bin/start-video"]
