@@ -94,7 +94,7 @@ class McpOAuthTest extends TestCase
         $this->exchange($p, $code, ['redirect_uri' => 'https://evil.example'])->assertStatus(400);
         $tokens = $this->exchange($p, $code)->assertOk()->json();
         $this->exchange($p, $code)->assertStatus(400);
-        $this->rpc($tokens['access_token'])->assertOk()->assertJsonCount(5, 'result.tools');
+        $this->rpc($tokens['access_token'])->assertOk()->assertJsonCount(6, 'result.tools');
         $this->rpc($tokens['refresh_token'])->assertUnauthorized();
         $this->travel(61)->minutes();
         $this->rpc($tokens['access_token'])->assertUnauthorized();
@@ -124,6 +124,7 @@ class McpOAuthTest extends TestCase
         $this->travel(6)->minutes();
         $this->exchange($p, $code)->assertStatus(400);
     }
+
     public function test_consent_requires_csrf_in_production(): void
     {
         $p = $this->params();
@@ -132,5 +133,4 @@ class McpOAuthTest extends TestCase
         $this->post('/oauth/authorize', ['nonce' => $r->viewData('nonce'), 'decision' => 'allow'])->assertStatus(419);
         $this->assertSame(0, DB::table('mcp_oauth_codes')->count());
     }
-
 }

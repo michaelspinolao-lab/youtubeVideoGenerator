@@ -30,3 +30,15 @@ são armazenados. A página `/integrations/chatgpt` permite revogar tanto chaves
 quanto autorizações OAuth. A conexão desktop por chave continua disponível.
 
 A correção OAuth não altera o processamento dos vídeos nem resolve falhas dos provedores.
+
+
+## Vídeos com foto própria (v1.1)
+- Envie JPG/PNG até 5 MB em /photos, com login. As imagens ficam privadas.
+- No ChatGPT, consulte list_photos e envie photo_id em create_video.
+- Com photo_id e custom_script, Pixabay e Gemini não são necessários.
+- Saída vertical 720×1280, foto original com zoom suave e narração em português.
+- Não anima a pessoa, não gera filmagens novas e não inclui música ou legendas.
+- Fotos anexadas ao chat não são enviadas automaticamente ao VideoGenius.
+- Atualize as ferramentas da conexão após instalar a nova versão do servidor.
+- Falhas agora retornam categorias específicas, sem revelar chaves dos provedores.
+- Teste local sem rede/provedores: python scripts/test_photo_generation.py (requer FFmpeg).

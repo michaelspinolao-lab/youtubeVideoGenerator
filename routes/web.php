@@ -100,3 +100,9 @@ Route::middleware(['auth', 'throttle:10,1'])->group(function () {
 
 Route::get('/oauth/authorize', [\App\Http\Controllers\McpOAuthController::class, 'authorize'])->middleware('throttle:30,1');
 Route::post('/oauth/authorize', [\App\Http\Controllers\McpOAuthController::class, 'approve'])->middleware(['auth', 'throttle:30,1']);
+
+Route::middleware(['auth', 'throttle:30,1'])->group(function () {
+    Route::get('/photos', [\App\Http\Controllers\VideoPhotoController::class, 'index']);
+    Route::post('/photos', [\App\Http\Controllers\VideoPhotoController::class, 'store']);
+    Route::get('/photos/{photo}', [\App\Http\Controllers\VideoPhotoController::class, 'show']);
+});

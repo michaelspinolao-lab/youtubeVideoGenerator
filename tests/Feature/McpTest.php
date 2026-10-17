@@ -48,7 +48,7 @@ class McpTest extends TestCase
     public function test_protocol_discovery_and_bad_origin(): void
     {
         $this->rpc('initialize', ['protocolVersion' => '2025-06-18'])->assertOk()->assertJsonPath('result.serverInfo.name', 'videogenius');
-        $this->rpc('tools/list')->assertJsonCount(5, 'result.tools');
+        $this->rpc('tools/list')->assertJsonCount(6, 'result.tools');
         $this->rpc('bogus')->assertJsonPath('error.code', -32601);
         $this->withHeader('Origin', 'https://evil.example')->rpc('tools/list')->assertForbidden();
     }
@@ -93,6 +93,59 @@ class McpTest extends TestCase
         $this->rpc('tools/list')->assertUnauthorized();
         $this->assertSame(1, DB::table('mcp_tokens')->count());
         $this->actingAs($this->owner)->post('/integrations/chatgpt/revoke')->assertRedirect('/integrations/chatgpt');
-        $this->assertSame(0,DB::table('mcp_tokens')->count());
+        $this->assertSame(0, DB::table('mcp_tokens')->count());
+    }
+
+    public function test_photo_video_ownership_and_idempotency(): void
+    {
+        Queue::fake();
+        Storage::fake('local');
+        config(['video.pixabay_key' => null]);
+        $id = (string) \Illuminate\Support\Str::uuid();
+        Storage::disk('local')->put('photos/test.jpg', 'fixture');
+        DB::table('video_photos')->insert(['id' => $id, 'user_id' => $this->owner->id, 'path' => 'photos/test.jpg', 'created_at' => now(), 'updated_at' => now()]);
+        $other = User::factory()->create();
+        $hidden = (string) \Illuminate\Support\Str::uuid();
+        DB::table('video_photos')->insert(['id' => $hidden, 'user_id' => $other->id, 'path' => 'photos/test.jpg', 'created_at' => now(), 'updated_at' => now()]);
+        $list = $this->tool('list_photos')->assertJsonPath('result.isError', false);
+        $photos = json_decode($list->json('result.content.0.text'), true)['photos'];
+        $this->assertCount(1, $photos);
+        $this->assertSame($id, $photos[0]['id']);
+        $a = ['topic' => 'Conjunto creme', 'duration' => 30, 'custom_script' => 'Um conjunto elegante.', 'request_id' => 'photo-test-123', 'photo_id' => $id];
+        $this->tool('create_video', array_merge($a, ['photo_id' => $hidden]))->assertJsonPath('result.isError', true);
+        $this->assertSame(0, Video::count());
+        $this->tool('create_video', $a)->assertJsonPath('result.isError', false);
+        $this->tool('create_video', $a)->assertJsonPath('result.isError', false);
+        $this->assertSame(1, Video::count());
+        $this->assertSame(1, $this->owner->fresh()->videos_generated_this_month);
+        $this->assertSame('photos/test.jpg', \App\Models\VideoGeneration::first()->parameters['photo_path']);
+        $this->tool('create_video', array_merge($a, ['photo_id' => $hidden]))->assertJsonPath('result.isError', true);
+        $this->actingAs($this->owner)->get('/photos/'.$hidden)->assertNotFound();
+        $this->actingAs($this->owner)->post('/photos', ['photo' => \Illuminate\Http\UploadedFile::fake()->create('malicious.svg', 1, 'image/svg+xml')])->assertSessionHasErrors('photo');
+    }
+
+    public function test_worker_errors_are_specific_and_do_not_echo_secrets(): void
+    {
+        Queue::fake();
+        $v = app(\App\Services\VideoCreation::class)->create($this->owner, ['topic' => 'Teste', 'duration' => 30, 'custom_script' => 'Teste']);
+        $g = \App\Models\VideoGeneration::first();
+        $job = new GenerateVideo($v->id, $g->id);
+        $job->failed(new \RuntimeException('no_stock_footage'));
+        $this->assertStringContainsString('não encontrou clipes', $v->fresh()->failure_reason);
+        $job->failed(new \RuntimeException('https://provider.example?key=SECRET'));
+        $this->assertStringNotContainsString('SECRET', $v->fresh()->failure_reason);
+        $this->assertSame('worker_failed', $g->fresh()->error_message);
+    }
+
+    public function test_photo_upload_and_private_preview(): void
+    {
+        Storage::fake('local');
+        $file = \Illuminate\Http\UploadedFile::fake()->createWithContent('look.png', base64_decode('iVBORw0KGgoAAAANSUhEUgAAAHgAAADICAIAAACszLLwAAAByElEQVR4nO3QQREAIRDAsAX/nu9UUB4kCjpdM99w3r4d8AqjI0ZHjI4YHTE6YnTE6IjREaMjRkeMjhgdMTpidMToiNERoyNGR4yOGB0xOmJ0xOiI0RGjI0ZHjI4YHTE6YnTE6IjREaMjRkeMjhgdMTpidMToiNERoyNGR4yOGB0xOmJ0xOiI0RGjI0ZHjI4YHTE6YnTE6IjREaMjRkeMjhgdMTpidMToiNERoyNGR4yOGB0xOmJ0xOiI0RGjI0ZHjI4YHTE6YnTE6IjREaMjRkeMjhgdMTpidMToiNERoyNGR4yOGB0xOmJ0xOiI0RGjI0ZHjI4YHTE6YnTE6IjREaMjRkeMjhgdMTpidMToiNERoyNGR4yOGB0xOmJ0xOiI0RGjI0ZHjI4YHTE6YnTE6IjREaMjRkeMjhgdMTpidMToiNERoyNGR4yOGB0xOmJ0xOiI0RGjI0ZHjI4YHTE6YnTE6IjREaMjRkeMjhgdMTpidMToiNERoyNGR4yOGB0xOmJ0xOiI0RGjI0ZHjI4YHTE6YnTE6IjREaMjRkeMjhgdMTpidMToiNERoyNGR4yOGB0xOmJ0xOiI0RGjI0ZHjI4YHTE6YnTkB3itAo/GZc1yAAAAAElFTkSuQmCC'));
+        $this->actingAs($this->owner)->post('/photos', ['photo' => $file])->assertRedirect()->assertSessionHas('photo_id');
+        $photo = DB::table('video_photos')->first();
+        $this->assertSame($this->owner->id, $photo->user_id);
+        Storage::disk('local')->assertExists($photo->path);
+        $this->get('/photos/'.$photo->id)->assertOk()->assertHeader('X-Content-Type-Options', 'nosniff');
+        $this->actingAs(User::factory()->create())->get('/photos/'.$photo->id)->assertNotFound();
     }
 }

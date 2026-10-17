@@ -12,6 +12,18 @@ use Throwable;
 
 class GenerateVideo implements ShouldQueue
 {
+    private const ERRORS = [
+        'photo_missing' => 'A foto original não foi encontrada. Envie novamente em /photos.',
+        'no_stock_footage' => 'O Pixabay não encontrou clipes para este tema. Use poucas palavras ou envie uma foto.',
+        'script_provider_failed' => 'Falha ao criar o roteiro com Gemini. Envie um roteiro próprio.',
+        'stock_provider_failed' => 'Falha ao buscar ou baixar os clipes do Pixabay. Verifique a chave e a disponibilidade do provedor.',
+        'voice_provider_failed' => 'O serviço de narração não respondeu ou recusou a solicitação.',
+        'render_failed' => 'Falha na montagem do MP4. Verifique a imagem e os recursos do servidor.',
+        'invalid_audio' => 'A duração da narração é inválida.',
+        'invalid_output' => 'O vídeo final não passou na verificação de duração.',
+        'worker_failed' => 'O processo de geração não iniciou corretamente. Verifique as dependências do servidor.',
+    ];
+
     use Queueable;
 
     public $timeout = 1800;
@@ -34,10 +46,11 @@ class GenerateVideo implements ShouldQueue
             'GEMINI_MODEL' => config('video.gemini_model') ?? '',
             'PIXABAY_API_KEY' => config('video.pixabay_key') ?? '',
         ]);
-        $process->setInput(json_encode(['topic' => $v->topic, 'script' => $v->generated_script, 'duration' => $g->parameters['duration'], 'directory' => Storage::disk('local')->path($dir)]));
+        $process->setInput(json_encode(['topic' => $v->topic, 'script' => $v->generated_script, 'duration' => $g->parameters['duration'], 'directory' => Storage::disk('local')->path($dir), 'photo' => empty($g->parameters['photo_path']) ? null : Storage::disk('local')->path($g->parameters['photo_path'])]));
         $process->setTimeout(1700);
         $buffer = '';
-        $process->run(function ($type, $chunk) use ($v, &$buffer) {
+        $errorCode = 'worker_failed';
+        $process->run(function ($type, $chunk) use ($v, &$buffer, &$errorCode) {
             if ($type !== Process::OUT) {
                 return;
             }
@@ -46,13 +59,16 @@ class GenerateVideo implements ShouldQueue
                 $line = substr($buffer, 0, $pos);
                 $buffer = substr($buffer, $pos + 1);
                 $event = json_decode($line, true);
+                if (isset(self::ERRORS[$event['error_code'] ?? ''])) {
+                    $errorCode = $event['error_code'];
+                }
                 if (in_array($event['status'] ?? '', ['generating_script', 'fetching_visuals', 'generating_voiceover', 'assembling_video'])) {
                     $v->update(['status' => $event['status']]);
                 }
             }
         });
         if (! $process->isSuccessful()) {
-            throw new \RuntimeException('Falha na geração. Confira as chaves e a disponibilidade dos provedores.');
+            throw new \RuntimeException($errorCode);
         }
         $result = json_decode(file_get_contents(Storage::disk('local')->path($dir.'/result.json')), true, flags: JSON_THROW_ON_ERROR);
         if (! Storage::disk('local')->exists($dir.'/final.mp4')) {
@@ -64,7 +80,9 @@ class GenerateVideo implements ShouldQueue
 
     public function failed(?Throwable $e): void
     {
-        Video::whereKey($this->videoId)->update(['status' => 'failed', 'failure_reason' => 'Não foi possível concluir. Verifique a configuração dos provedores e tente criar um novo vídeo.']);
-        VideoGeneration::whereKey($this->generationId)->update(['status' => 'failed', 'completed_at' => now(), 'error_message' => 'Generation failed']);
+        $code = isset(self::ERRORS[$e?->getMessage() ?? '']) ? $e->getMessage() : 'worker_failed';
+        Video::whereKey($this->videoId)->update(['status' => 'failed', 'failure_reason' => self::ERRORS[$code]]);
+        VideoGeneration::whereKey($this->generationId)->update(['status' => 'failed', 'completed_at' => now(), 'error_message' => $code]);
+        \Illuminate\Support\Facades\Log::warning('Video generation failed', ['video_id' => $this->videoId, 'error_code' => $code]);
     }
 }

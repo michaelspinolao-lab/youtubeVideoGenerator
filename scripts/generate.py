@@ -4,7 +4,15 @@ from pathlib import Path
 from urllib.parse import urlparse
 import requests
 
+STAGE = 'initializing'
+
+class GenerationError(Exception):
+    def __init__(self, code):
+        self.code = code
+
 def progress(status):
+    global STAGE
+    STAGE = status
     print(json.dumps({'status': status}), flush=True)
 
 def run(args):
@@ -57,29 +65,58 @@ def main(data):
         response.raise_for_status()
         script=''.join(x.get('text','') for x in response.json()['candidates'][0]['content']['parts']).strip()
     if not script or len(script)>10000: raise ValueError('Invalid script')
-    progress('fetching_visuals')
-    response=requests.get('https://pixabay.com/api/videos/',params={'key':os.environ['PIXABAY_API_KEY'],'q':data['topic'][:100],'per_page':5,'safesearch':'true'},timeout=40)
-    response.raise_for_status()
     clips=[]; sources=[]
-    for i,hit in enumerate(response.json().get('hits',[])[:5]):
-        variant=hit.get('videos',{}).get('medium') or hit.get('videos',{}).get('small')
-        if not variant: continue
-        dest=directory/f'clip-{i}.mp4'; download(variant['url'],dest);clips.append(dest)
-        sources.append({'id':hit['id'],'page':hit.get('pageURL'),'author':hit.get('user')})
-    if not clips: raise ValueError('No stock footage found; choose a simpler topic')
+    photo = data.get('photo')
+    if photo:
+        if not Path(photo).is_file():
+            raise GenerationError('photo_missing')
+    else:
+        progress('fetching_visuals')
+        response=requests.get('https://pixabay.com/api/videos/',params={'key':os.environ['PIXABAY_API_KEY'],'q':data['topic'][:100],'per_page':5,'safesearch':'true'},timeout=40)
+        response.raise_for_status()
+        clips=[]; sources=[]
+        for i,hit in enumerate(response.json().get('hits',[])[:5]):
+            variant=hit.get('videos',{}).get('medium') or hit.get('videos',{}).get('small')
+            if not variant: continue
+            dest=directory/f'clip-{i}.mp4'; download(variant['url'],dest);clips.append(dest)
+            sources.append({'id':hit['id'],'page':hit.get('pageURL'),'author':hit.get('user')})
+        if not clips: raise GenerationError('no_stock_footage')
     progress('generating_voiceover')
     from gtts import gTTS
     audio=directory/'voice.mp3'
     gTTS(text=script,lang='pt',tld='com.br',timeout=(10,60)).save(str(audio))
     progress('assembling_video')
-    seconds=assemble(clips,audio,directory/'final.mp4',directory)
+    if photo:
+        seconds = duration(audio)
+        if not 0 < seconds <= 900:
+            raise GenerationError('invalid_audio')
+        frames = int(seconds * 25) + 1
+        # Fit the whole photograph first; a subtle centered zoom adds camera motion.
+        vf = ("scale=720:1280:force_original_aspect_ratio=decrease,"
+              "pad=720:1280:(ow-iw)/2:(oh-ih)/2:color=white,setsar=1,"
+              f"zoompan=z='1+0.025*on/{frames}':x='iw/2-iw/zoom/2':"
+              f"y='ih/2-ih/zoom/2':d={frames}:s=720x1280:fps=25,format=yuv420p")
+        run(['ffmpeg','-y','-i',str(photo),'-i',str(audio),'-vf',vf,
+             '-map','0:v:0','-map','1:a:0','-t',str(seconds),'-c:v','libx264',
+             '-preset','fast','-threads','2','-c:a','aac','-movflags','+faststart',
+             str(directory/'final.mp4')])
+        if abs(duration(directory/'final.mp4') - seconds) > 1:
+            raise GenerationError('invalid_output')
+    else:
+        seconds=assemble(clips,audio,directory/'final.mp4',directory)
     (directory/'result.json').write_text(json.dumps({'script':script,'duration':seconds,'sources':sources},ensure_ascii=False))
     for pattern in ('clip-*.mp4','part-*.mp4','sequence.mp4','clips.txt'):
         for path in directory.glob(pattern): path.unlink()
 
 if __name__=='__main__':
     try: main(json.load(sys.stdin))
-    except Exception:
-        # Do not leak provider URLs, API keys or user scripts into queue logs.
-        print('Generation failed: check providers, topic and worker dependencies.',file=sys.stderr)
+    except Exception as error:
+        # Only stable codes leave the worker: never include exception text or provider URLs.
+        code = error.code if isinstance(error, GenerationError) else {
+            'generating_script': 'script_provider_failed',
+            'fetching_visuals': 'stock_provider_failed',
+            'generating_voiceover': 'voice_provider_failed',
+            'assembling_video': 'render_failed',
+        }.get(STAGE, 'worker_failed')
+        print(json.dumps({'error_code': code, 'stage': STAGE}), flush=True)
         sys.exit(1)

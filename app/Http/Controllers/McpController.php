@@ -60,7 +60,7 @@ class McpController extends Controller
         if ($m['method'] === 'initialize') {
             $version = in_array($params['protocolVersion'] ?? '', ['2024-11-05', '2025-03-26', '2025-06-18', '2025-11-25']) ? $params['protocolVersion'] : '2025-06-18';
 
-            return $this->result($id, ['protocolVersion' => $version, 'capabilities' => ['tools' => ['listChanged' => false]], 'serverInfo' => ['name' => 'videogenius', 'version' => '1.0.0'], 'instructions' => 'Crie vídeos apenas quando solicitado. Envie um roteiro próprio para dispensar Gemini. Preserve request_id nas tentativas. Não publique no YouTube: esta integração gera MP4.']);
+            return $this->result($id, ['protocolVersion' => $version, 'capabilities' => ['tools' => ['listChanged' => false]], 'serverInfo' => ['name' => 'videogenius', 'version' => '1.1.0'], 'instructions' => 'Crie vídeos apenas quando solicitado. Envie um roteiro próprio para dispensar Gemini. Preserve request_id nas tentativas. Não publique no YouTube: esta integração gera MP4.']);
         }
         if ($m['method'] === 'ping') {
             return $this->result($id, (object) []);
@@ -111,11 +111,12 @@ class McpController extends Controller
         $read = ['readOnlyHint' => true, 'destructiveHint' => false, 'idempotentHint' => true, 'openWorldHint' => false];
 
         return [
+            ['name' => 'list_photos', 'description' => 'Lista as fotos privadas enviadas pelo usuário em /photos. Use o ID em create_video. O vídeo aplica zoom na foto, sem animar a pessoa.', 'inputSchema' => $object(), 'annotations' => $read],
             ['name' => 'account_status', 'description' => 'Consulta a cota mensal e se os provedores estão configurados, sem revelar chaves.', 'inputSchema' => $object(), 'annotations' => $read],
             ['name' => 'list_videos', 'description' => 'Lista até 20 vídeos da conta, com paginação.', 'inputSchema' => $object(['page' => ['type' => 'integer', 'minimum' => 1]]), 'annotations' => $read],
             ['name' => 'get_video', 'description' => 'Consulta estado e resultado de um vídeo da conta.', 'inputSchema' => $video, 'annotations' => $read],
             ['name' => 'get_video_download', 'description' => 'Cria um link de download do MP4 pronto válido por 30 minutos. Qualquer pessoa com o link pode baixá-lo até expirar.', 'inputSchema' => $video, 'annotations' => $read],
-            ['name' => 'create_video', 'description' => 'Enfileira um vídeo narrado em português, usando clipes do Pixabay. Consome a cota mensal. Roteiro próprio obrigatório dispensa Gemini. Use o mesmo request_id numa repetição da mesma solicitação. Não gera filmagens novas com IA nem publica no YouTube.', 'inputSchema' => $object(['topic' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 200], 'duration' => ['type' => 'integer', 'minimum' => 30, 'maximum' => 600], 'custom_script' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 8000], 'request_id' => ['type' => 'string', 'minLength' => 8, 'maxLength' => 100]], ['topic', 'duration', 'custom_script', 'request_id']), 'annotations' => ['readOnlyHint' => false, 'destructiveHint' => false, 'idempotentHint' => true, 'openWorldHint' => true]],
+            ['name' => 'create_video', 'description' => 'Enfileira um vídeo narrado em português, usando foto própria (photo_id) ou clipes do Pixabay. Para fotos, consulte list_photos; envio em /photos. A foto recebe zoom suave, sem animação da pessoa. Consome a cota mensal. Roteiro próprio obrigatório dispensa Gemini. Use o mesmo request_id numa repetição da mesma solicitação. Não gera filmagens novas com IA nem publica no YouTube.', 'inputSchema' => $object(['photo_id' => ['type' => 'string', 'format' => 'uuid', 'description' => 'Opcional: ID retornado por list_photos.'], 'topic' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 200], 'duration' => ['type' => 'integer', 'minimum' => 30, 'maximum' => 600], 'custom_script' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 8000], 'request_id' => ['type' => 'string', 'minLength' => 8, 'maxLength' => 100]], ['topic', 'duration', 'custom_script', 'request_id']), 'annotations' => ['readOnlyHint' => false, 'destructiveHint' => false, 'idempotentHint' => true, 'openWorldHint' => true]],
         ];
     }
 
@@ -126,10 +127,13 @@ class McpController extends Controller
 
     private function call(User $u, string $name, array $a): array
     {
+        if ($name === 'list_photos') {
+            return ['upload_url' => rtrim(config('app.url'), '/').'/photos', 'photos' => DB::table('video_photos')->where('user_id', $u->id)->latest()->limit(30)->get(['id', 'created_at'])->all()];
+        }
         if ($name === 'account_status') {
             $u->canGenerateVideo();
 
-            return ['monthly_quota' => $u->monthly_video_quota, 'used' => $u->videos_generated_this_month, 'remaining' => max(0, $u->monthly_video_quota - $u->videos_generated_this_month), 'pixabay_configured' => (bool) config('video.pixabay_key'), 'gemini_configured' => (bool) (config('video.gemini_key') && config('video.gemini_model')), 'custom_script_supported' => true];
+            return ['monthly_quota' => $u->monthly_video_quota, 'used' => $u->videos_generated_this_month, 'remaining' => max(0, $u->monthly_video_quota - $u->videos_generated_this_month), 'pixabay_configured' => (bool) config('video.pixabay_key'), 'gemini_configured' => (bool) (config('video.gemini_key') && config('video.gemini_model')), 'custom_script_supported' => true, 'photo_video_supported' => true, 'photo_upload_url' => rtrim(config('app.url'), '/').'/photos'];
         }
         if ($name === 'list_videos') {
             $d = Validator::make($a, ['page' => 'sometimes|integer|min:1|max:100000'])->validate();
@@ -139,11 +143,15 @@ class McpController extends Controller
             return ['videos' => $vs->take(20)->map(fn ($v) => $this->details($v))->values()->all(), 'next_page' => $vs->count() > 20 ? $page + 1 : null];
         }
         if ($name === 'create_video') {
-            $d = Validator::make($a, ['topic' => 'required|string|max:200', 'duration' => 'required|integer|min:30|max:600', 'custom_script' => 'required|string|max:8000', 'request_id' => 'required|string|min:8|max:100|regex:/^[a-zA-Z0-9_-]+$/'])->validate();
-            if (! config('video.pixabay_key')) {
+            $d = Validator::make($a, ['photo_id' => 'sometimes|nullable|uuid', 'topic' => 'required|string|max:200', 'duration' => 'required|integer|min:30|max:600', 'custom_script' => 'required|string|max:8000', 'request_id' => 'required|string|min:8|max:100|regex:/^[a-zA-Z0-9_-]+$/'])->validate();
+            if (empty($d['photo_id']) && ! config('video.pixabay_key')) {
                 throw ValidationException::withMessages(['configuration' => 'Configure a chave Pixabay no Render.']);
             }
-            $hash = hash('sha256', json_encode([$d['topic'], (int) $d['duration'], $d['custom_script']]));
+            $payload = [$d['topic'], (int) $d['duration'], $d['custom_script']];
+            if (! empty($d['photo_id'])) {
+                $payload[] = $d['photo_id'];
+            }
+            $hash = hash('sha256', json_encode($payload));
 
             return DB::transaction(function () use ($u, $d, $hash) {
                 $owner = User::whereKey($u->id)->lockForUpdate()->firstOrFail();
