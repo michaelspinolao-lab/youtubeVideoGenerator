@@ -1,0 +1,24 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "videogenius",
+  "version": "1.0.0",
+  "description": "Crie vídeos narrados em português, acompanhe a geração e baixe seus MP4 privados.",
+  "author": {
+    "name": "Michael Oliveira Spinola"
+  },
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "VideoGenius",
+        "shortDescription": "Crie e baixe seus vídeos",
+        "longDescription": "Conecta à sua instalação privada do VideoGenius. Gera vídeos com roteiro próprio e clipes do Pixabay, consulta a cota e o andamento e oferece download temporário do MP4. Não publica nas redes sociais. Gere uma chave em https://aripuango.info/integrations/chatgpt e use-a no campo de autenticação do plugin.",
+        "developerName": "Michael Oliveira Spinola",
+        "category": "Productivity",
+        "capabilities": [
+          "Write"
+        ],
+        "defaultPrompt": "Crie um vídeo narrado em português com meu roteiro."
+      }
+    }
+  }
+}

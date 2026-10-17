@@ -91,3 +91,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
 // Route::middleware(['auth', 'admin'])->prefix('admin')->group(function () {
 //     // Admin dashboard, user management, etc.
 // });
+
+Route::middleware(['auth', 'throttle:10,1'])->group(function () {
+    Route::get('/integrations/chatgpt', [\App\Http\Controllers\McpConnectionController::class, 'index']);
+    Route::post('/integrations/chatgpt', [\App\Http\Controllers\McpConnectionController::class, 'create']);
+    Route::post('/integrations/chatgpt/revoke', [\App\Http\Controllers\McpConnectionController::class, 'revoke']);
+});

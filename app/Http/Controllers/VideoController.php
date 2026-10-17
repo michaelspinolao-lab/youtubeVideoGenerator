@@ -2,17 +2,11 @@
 
 namespace App\Http\Controllers;
 
-use App\Jobs\GenerateVideo;
-use App\Models\User;
 use App\Models\Video;
-use App\Models\VideoGeneration;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 class VideoController extends Controller
@@ -38,18 +32,7 @@ class VideoController extends Controller
         if (! config('video.pixabay_key') || (empty($data['custom_script']) && (! config('video.gemini_key') || ! config('video.gemini_model')))) {
             return back()->with('error', 'Configure Pixabay e Gemini antes de gerar. Com roteiro próprio, Gemini não é necessário.');
         }
-        $v = DB::transaction(function () use ($r, $data) {
-            $user = User::whereKey($r->user()->id)->lockForUpdate()->firstOrFail();
-            if (! $user->canGenerateVideo()) {
-                throw ValidationException::withMessages(['topic' => 'Limite mensal atingido.']);
-            }
-            $v = $user->videos()->create(['title' => $data['topic'], 'topic' => $data['topic'], 'youtube_channel_id' => $data['youtube_channel_id'] ?? null, 'generated_script' => $data['custom_script'] ?? null, 'status' => 'generating_script']);
-            $g = VideoGeneration::create(['user_id' => $user->id, 'video_id' => $v->id, 'job_id' => (string) Str::uuid(), 'topic' => $data['topic'], 'parameters' => ['duration' => $data['duration']], 'status' => 'queued']);
-            $user->increment('videos_generated_this_month');
-            GenerateVideo::dispatch($v->id, $g->id)->afterCommit();
-
-            return $v;
-        });
+        $v = app(\App\Services\VideoCreation::class)->create($r->user(), $data);
 
         return redirect()->route('videos.show', $v);
     }
@@ -100,6 +83,6 @@ class VideoController extends Controller
     {
         $this->own($video);
 
-        return back()->with('error','Envio automático ainda não está habilitado. Baixe o MP4 e envie pelo YouTube Studio.');
+        return back()->with('error', 'Envio automático ainda não está habilitado. Baixe o MP4 e envie pelo YouTube Studio.');
     }
 }
