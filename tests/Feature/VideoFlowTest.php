@@ -94,6 +94,29 @@ class VideoFlowTest extends TestCase
         $g = \App\Models\VideoGeneration::create(['user_id' => $u->id, 'video_id' => $v->id, 'topic' => 'Test', 'job_id' => 'unique']);
         (new GenerateVideo($v->id, $g->id))->failed(new \RuntimeException('sensitive provider url'));
         $this->assertSame('failed', $v->fresh()->status);
-        $this->assertStringNotContainsString('sensitive',$v->fresh()->failure_reason);
+        $this->assertStringNotContainsString('sensitive', $v->fresh()->failure_reason);
+    }
+
+    public function test_google_callback_creates_account_without_password_error(): void
+    {
+        $google = (new \Laravel\Socialite\Two\User)->map(['id' => 'google-test', 'name' => 'Owner', 'email' => 'owner@example.com', 'avatar' => null]);
+        $google->user = ['email_verified' => true];
+        \Laravel\Socialite\Facades\Socialite::shouldReceive('driver->user')->once()->andReturn($google);
+        $this->get('/auth/google/callback')->assertRedirect('/dashboard');
+        $this->assertAuthenticated();
+        $this->assertDatabaseHas('users', ['google_id' => 'google-test', 'email' => 'owner@example.com']);
+    }
+
+    public function test_production_refuses_other_google_account_and_demo(): void
+    {
+        $this->app->instance('env', 'production');
+        config(['video.allowed_email' => 'owner@example.com']);
+        $google = (new \Laravel\Socialite\Two\User)->map(['id' => 'other-google', 'name' => 'Other', 'email' => 'other@example.com', 'avatar' => null]);
+        $google->user = ['email_verified' => true];
+        \Laravel\Socialite\Facades\Socialite::shouldReceive('driver->user')->once()->andReturn($google);
+        $this->get('/auth/google/callback')->assertRedirect('/login');
+        $this->assertGuest();
+        $this->get('/demo-login')->assertNotFound();
+        $this->assertSame(0, User::count());
     }
 }

@@ -7,7 +7,7 @@ Esta edição implementa o fluxo **tema/roteiro → fila Laravel → clipes Pixa
 - Implementados: login Google restrito ao e-mail do proprietário em produção; formulário; fila e estados; narração PT-BR; montagem com vários clipes e áudio completo; download autorizado; exclusão de arquivos; limite mensal.
 - Não implementados: publicação direta no YouTube, piloto automático, legendas, música, cobrança de assinaturas. Essas funções não são oferecidas na nova interface.
 - Os arquivos e instruções n8n do projeto original são históricos. **Não exponha as rotas antigas de `routes/api.php`**. Esta edição não carrega esse arquivo e não depende de n8n.
-- Testados localmente: build Vite, oito testes Laravel (23 asserções), montagem FFmpeg com clipes coloridos e áudio de cinco segundos, repetição dos clipes e proteção de URLs de download.
+- Testados localmente: build Vite, dez testes Laravel, montagem FFmpeg com clipes coloridos e áudio de cinco segundos, repetição dos clipes e proteção de URLs de download.
 - Ainda dependem de validação com credenciais: login real Google, busca real Pixabay e geração Gemini/TTS. O container deve passar no workflow de CI e em um teste de inicialização antes do deploy. Não considerar esses testes como concluídos apenas porque o código compila.
 
 ## Configuração necessária
