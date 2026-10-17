@@ -38,7 +38,27 @@ A correção OAuth não altera o processamento dos vídeos nem resolve falhas do
 - Com photo_id e custom_script, Pixabay e Gemini não são necessários.
 - Saída vertical 720×1280, foto original com zoom suave e narração em português.
 - Não anima a pessoa, não gera filmagens novas e não inclui música ou legendas.
-- Fotos anexadas ao chat não são enviadas automaticamente ao VideoGenius.
+- Fotos anexadas ao chat podem ser enviadas pela ferramenta upload_photo após atualizar os metadados da conexão (v1.2).
 - Atualize as ferramentas da conexão após instalar a nova versão do servidor.
 - Falhas agora retornam categorias específicas, sem revelar chaves dos provedores.
 - Teste local sem rede/provedores: python scripts/test_photo_generation.py (requer FFmpeg).
+
+
+## Fluxo completo no ChatGPT (v1.2)
+1. Use upload_photo com o anexo fornecido pelo usuário. O host resolve file em download_url/file_id/mime_type/file_name via openai/fileParams.
+2. Escreva apenas a narração em custom_script, usando o contexto da foto e sem inventar preço, tecido, disponibilidade ou promessas.
+3. Use prepare_video para validar a foto, apresentar o roteiro e informar quota_cost. Esta consulta e o upload não consomem cota.
+4. Quando a geração estiver autorizada, chame create_video com photo_id e request_id estável. Um vídeo novo consome uma unidade.
+5. Consulte get_video até ready ou failed. A duração final acompanha a narração.
+6. Em caso de falha, consulte failure_reason. retry_video usa o mesmo vídeo e roteiro sem nova cota, com request_id estável por tentativa autorizada. Não faça ciclos de tentativas automáticas.
+7. Use get_video_download quando pronto. O link expira em 30 minutos.
+
+Segurança: imagens privadas, isolamento por usuário, JPG/PNG até 5 MB/32 MP,
+downloads apenas de hosts de anexos OpenAI, sem redirecionamentos, limites de leitura,
+erros sem URLs assinadas e deduplicação por conteúdo na conta. Upload não aceita
+URLs de redes internas, caminhos do servidor ou fotos arbitrárias de outras contas.
+
+Após publicar: Plugins → VideoGenius Web → conexão → Refresh/Atualizar.
+Inicie uma conversa nova e confirme que upload_photo, prepare_video, retry_video e
+list_photos aparecem. A lista antiga de cinco ferramentas fica em cache no host;
+alterar apenas a versão do pacote não substitui a atualização dos metadados MCP.

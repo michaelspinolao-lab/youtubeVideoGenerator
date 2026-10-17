@@ -94,7 +94,7 @@ class McpOAuthTest extends TestCase
         $this->exchange($p, $code, ['redirect_uri' => 'https://evil.example'])->assertStatus(400);
         $tokens = $this->exchange($p, $code)->assertOk()->json();
         $this->exchange($p, $code)->assertStatus(400);
-        $this->rpc($tokens['access_token'])->assertOk()->assertJsonCount(6, 'result.tools');
+        $this->rpc($tokens['access_token'])->assertOk()->assertJsonCount(9, 'result.tools');
         $this->rpc($tokens['refresh_token'])->assertUnauthorized();
         $this->travel(61)->minutes();
         $this->rpc($tokens['access_token'])->assertUnauthorized();

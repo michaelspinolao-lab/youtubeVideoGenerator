@@ -37,4 +37,32 @@ class VideoCreation
 
         return $v;
     }
+
+    public function retry(User $owner, int $id, string $requestId): Video
+    {
+        return DB::transaction(function () use ($owner, $id, $requestId) {
+            $user = User::whereKey($owner->id)->lockForUpdate()->firstOrFail();
+            $v = $user->videos()->whereKey($id)->lockForUpdate()->firstOrFail();
+            $key = 'retry:'.hash('sha256', $requestId);
+            $hash = hash('sha256', (string) $id);
+            $existing = DB::table('mcp_requests')->where('user_id', $user->id)->where('request_id', $key)->first();
+            if ($existing) {
+                if (! hash_equals($existing->payload_hash, $hash)) {
+                    throw ValidationException::withMessages(['request_id' => 'Já utilizado com outro vídeo.']);
+                }
+
+                return $v;
+            }
+            if ($v->status !== 'failed') {
+                throw ValidationException::withMessages(['video_id' => 'Somente vídeos com falha podem ser repetidos. Consulte o andamento.']);
+            }
+            $g = VideoGeneration::where('user_id', $user->id)->where('video_id', $id)->latest('id')->lockForUpdate()->firstOrFail();
+            $v->update(['status' => 'generating_script', 'failure_reason' => null]);
+            $g->update(['status' => 'queued', 'completed_at' => null, 'started_at' => null, 'error_message' => null]);
+            DB::table('mcp_requests')->insert(['user_id' => $user->id, 'request_id' => $key, 'payload_hash' => $hash, 'video_id' => $id, 'created_at' => now(), 'updated_at' => now()]);
+            GenerateVideo::dispatch($v->id, $g->id)->afterCommit();
+
+            return $v;
+        });
+    }
 }

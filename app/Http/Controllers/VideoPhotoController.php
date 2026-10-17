@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 
 class VideoPhotoController extends Controller
 {
@@ -17,17 +16,9 @@ class VideoPhotoController extends Controller
     public function store(Request $r)
     {
         $r->validate(['photo' => 'required|file|mimes:jpg,jpeg,png|max:5120|dimensions:min_width=100,min_height=100,max_width=8000,max_height=8000']);
-        $file = $r->file('photo');
-        $id = (string) Str::uuid();
-        $path = $file->storeAs('photos/'.$r->user()->id, $id.'.'.$file->extension(), 'local');
-        try {
-            DB::table('video_photos')->insert(['id' => $id, 'user_id' => $r->user()->id, 'path' => $path, 'created_at' => now(), 'updated_at' => now()]);
-        } catch (\Throwable $e) {
-            Storage::disk('local')->delete($path);
-            throw $e;
-        }
+        $result = app(\App\Services\PhotoImport::class)->store($r->user(), file_get_contents($r->file('photo')->getRealPath()));
 
-        return back()->with('photo_id', $id);
+        return back()->with('photo_id', $result['photo_id']);
     }
 
     public function show(Request $r, string $photo)

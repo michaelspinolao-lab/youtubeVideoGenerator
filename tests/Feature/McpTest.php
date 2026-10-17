@@ -48,7 +48,7 @@ class McpTest extends TestCase
     public function test_protocol_discovery_and_bad_origin(): void
     {
         $this->rpc('initialize', ['protocolVersion' => '2025-06-18'])->assertOk()->assertJsonPath('result.serverInfo.name', 'videogenius');
-        $this->rpc('tools/list')->assertJsonCount(6, 'result.tools');
+        $this->rpc('tools/list')->assertJsonCount(9, 'result.tools');
         $this->rpc('bogus')->assertJsonPath('error.code', -32601);
         $this->withHeader('Origin', 'https://evil.example')->rpc('tools/list')->assertForbidden();
     }
@@ -147,5 +147,79 @@ class McpTest extends TestCase
         Storage::disk('local')->assertExists($photo->path);
         $this->get('/photos/'.$photo->id)->assertOk()->assertHeader('X-Content-Type-Options', 'nosniff');
         $this->actingAs(User::factory()->create())->get('/photos/'.$photo->id)->assertNotFound();
+    }
+
+    private function pngFixture(): string
+    {
+        return base64_decode('iVBORw0KGgoAAAANSUhEUgAAAHgAAADICAIAAACszLLwAAAByElEQVR4nO3QQREAIRDAsAX/nu9UUB4kCjpdM99w3r4d8AqjI0ZHjI4YHTE6YnTE6IjREaMjRkeMjhgdMTpidMToiNERoyNGR4yOGB0xOmJ0xOiI0RGjI0ZHjI4YHTE6YnTE6IjREaMjRkeMjhgdMTpidMToiNERoyNGR4yOGB0xOmJ0xOiI0RGjI0ZHjI4YHTE6YnTE6IjREaMjRkeMjhgdMTpidMToiNERoyNGR4yOGB0xOmJ0xOiI0RGjI0ZHjI4YHTE6YnTE6IjREaMjRkeMjhgdMTpidMToiNERoyNGR4yOGB0xOmJ0xOiI0RGjI0ZHjI4YHTE6YnTE6IjREaMjRkeMjhgdMTpidMToiNERoyNGR4yOGB0xOmJ0xOiI0RGjI0ZHjI4YHTE6YnTE6IjREaMjRkeMjhgdMTpidMToiNERoyNGR4yOGB0xOmJ0xOiI0RGjI0ZHjI4YHTE6YnTE6IjREaMjRkeMjhgdMTpidMToiNERoyNGR4yOGB0xOmJ0xOiI0RGjI0ZHjI4YHTE6YnTE6IjREaMjRkeMjhgdMTpidMToiNERoyNGR4yOGB0xOmJ0xOiI0RGjI0ZHjI4YHTE6YnTkB3itAo/GZc1yAAAAAElFTkSuQmCC');
+    }
+
+    public function test_attachment_upload_deduplication_and_file_schema(): void
+    {
+        Storage::fake('local');
+        $png = $this->pngFixture();
+        \Illuminate\Support\Facades\Http::fake(['https://files.oaiusercontent.com/*' => fn () => \Illuminate\Support\Facades\Http::response($png, 200, ['Content-Type' => 'image/png'])]);
+        $file = ['download_url' => 'https://files.oaiusercontent.com/photo?sig=SECRET', 'file_id' => 'file-example'];
+        $first = $this->tool('upload_photo', ['file' => $file])->assertJsonPath('result.isError', false);
+        $id = json_decode($first->json('result.content.0.text'), true)['photo_id'];
+        $second = $this->tool('upload_photo', ['file' => $file]);
+        $this->assertSame($id, json_decode($second->json('result.content.0.text'), true)['photo_id']);
+        $this->assertSame(1, DB::table('video_photos')->count());
+        $this->assertSame(0, $this->owner->fresh()->videos_generated_this_month);
+        $tools = $this->rpc('tools/list')->json('result.tools');
+        $upload = collect($tools)->firstWhere('name', 'upload_photo');
+        $this->assertSame(['file'], $upload['_meta']['openai/fileParams']);
+        $this->assertSame(['download_url', 'file_id'], $upload['inputSchema']['properties']['file']['required']);
+        $this->assertSame(['download_url', 'file_id', 'mime_type', 'file_name'], array_keys($upload['inputSchema']['properties']['file']['properties']));
+    }
+
+    public function test_attachment_rejects_untrusted_urls_and_bad_downloads(): void
+    {
+        Storage::fake('local');
+        \Illuminate\Support\Facades\Http::fake();
+        foreach (['http://files.oaiusercontent.com/p', 'https://127.0.0.1/p', 'https://files.oaiusercontent.com.evil.test/p', 'https://files.oaiusercontent.com:8443/p', 'https://user:pass@files.oaiusercontent.com/p'] as $url) {
+            $this->tool('upload_photo', ['file' => ['download_url' => $url, 'file_id' => 'file-test']])->assertJsonPath('result.isError', true);
+        }
+        \Illuminate\Support\Facades\Http::assertNothingSent();
+        foreach ([
+            \Illuminate\Support\Facades\Http::response('', 302, ['Location' => 'https://127.0.0.1/']),
+            \Illuminate\Support\Facades\Http::response('not an image', 200),
+            \Illuminate\Support\Facades\Http::response('too big', 200, ['Content-Length' => 6000000]),
+            \Illuminate\Support\Facades\Http::response('expired SECRET', 403),
+            \Illuminate\Support\Facades\Http::response(str_repeat('x', 5242881), 200),
+        ] as $response) {
+            \Illuminate\Support\Facades\Http::fake(['*' => $response]);
+            $r = $this->tool('upload_photo', ['file' => ['download_url' => 'https://files.oaiusercontent.com/p?sig=SECRET', 'file_id' => 'file-test']])->assertJsonPath('result.isError', true);
+            $this->assertStringNotContainsString('SECRET', $r->getContent());
+        }
+        $this->assertSame(0, DB::table('video_photos')->count());
+    }
+
+    public function test_preparation_and_retry_preserve_quota_and_ownership(): void
+    {
+        Queue::fake();
+        Storage::fake('local');
+        $photo = app(\App\Services\PhotoImport::class)->store($this->owner, $this->pngFixture());
+        $a = ['topic' => 'Conjunto', 'duration' => 15, 'custom_script' => 'Elegância em cada passo.', 'photo_id' => $photo['photo_id']];
+        $this->tool('prepare_video', $a)->assertJsonPath('result.isError', false);
+        $this->assertSame(0, Video::count());
+        $this->assertSame(0, $this->owner->fresh()->videos_generated_this_month);
+        $this->tool('create_video', $a + ['request_id' => 'create-photo-123'])->assertJsonPath('result.isError', false);
+        $v = Video::first();
+        $retry = ['video_id' => $v->id, 'request_id' => 'retry-photo-123'];
+        $this->tool('retry_video', $retry)->assertJsonPath('result.isError', true);
+        $v->update(['status' => 'failed']);
+        \App\Models\VideoGeneration::first()->update(['status' => 'failed']);
+        $this->tool('retry_video', $retry)->assertJsonPath('result.isError', false);
+        $this->tool('retry_video', $retry)->assertJsonPath('result.isError', false);
+        Queue::assertPushed(GenerateVideo::class, 2);
+        $this->assertSame(1, $this->owner->fresh()->videos_generated_this_month);
+        $this->assertSame(1, Video::count());
+        $v->update(['status' => 'failed']);
+        $this->tool('retry_video', $retry)->assertJsonPath('result.isError', false);
+        Queue::assertPushed(GenerateVideo::class, 2);
+        $other = User::factory()->create();
+        $v->update(['user_id' => $other->id]);
+        $this->tool('retry_video', ['video_id' => $v->id, 'request_id' => 'retry-another'])->assertJsonPath('result.isError', true);
     }
 }
