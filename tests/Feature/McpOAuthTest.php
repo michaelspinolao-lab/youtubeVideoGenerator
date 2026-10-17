@@ -37,6 +37,8 @@ class McpOAuthTest extends TestCase
     private function approvedCode(array $p): string
     {
         $r = $this->actingAs($this->owner)->get('/oauth/authorize?'.http_build_query($p))->assertOk();
+        // Browsers enforce form-action on the redirect after consent as well.
+        $r->assertHeader('Content-Security-Policy', "frame-ancestors 'none'; form-action 'self' https://chatgpt.com");
         $nonce = $r->viewData('nonce');
         $r = $this->post('/oauth/authorize', ['nonce' => $nonce, 'decision' => 'allow'])->assertRedirect();
         parse_str(parse_url($r->headers->get('Location'), PHP_URL_QUERY), $q);

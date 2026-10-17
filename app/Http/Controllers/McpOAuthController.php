@@ -107,7 +107,7 @@ class McpOAuthController extends Controller
 
         return response()->view('mcp-oauth-consent', ['nonce' => $nonce])->withHeaders([
             'Cache-Control' => 'no-store', 'Referrer-Policy' => 'no-referrer', 'X-Frame-Options' => 'DENY',
-            'Content-Security-Policy' => "frame-ancestors 'none'; form-action 'self'"]);
+            'Content-Security-Policy' => "frame-ancestors 'none'; form-action 'self' https://chatgpt.com"]);
     }
 
     public function approve(Request $r)
