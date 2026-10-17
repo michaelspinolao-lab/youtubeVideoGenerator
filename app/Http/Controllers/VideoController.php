@@ -2,166 +2,104 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\GenerateVideo;
+use App\Models\User;
 use App\Models\Video;
 use App\Models\VideoGeneration;
 use Illuminate\Http\Request;
-use Inertia\Inertia;
-use Inertia\Response;
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Support\Str;
-use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
+use Inertia\Inertia;
 
 class VideoController extends Controller
 {
-    use AuthorizesRequests;
-    public function index(Request $request): Response
+    private function own(Video $video): void
     {
-        $videos = $request->user()
-            ->videos()
-            ->with('youtubeChannel')
-            ->orderBy('created_at', 'desc')
-            ->paginate(15)
-            ->withQueryString();
-
-        return Inertia::render('Videos/Index', [
-            'videos' => $videos
-        ]);
+        abort_unless($video->user_id === Auth::id(), 404);
     }
 
-    public function create(): Response
+    public function index(Request $r)
     {
-        $youtubeChannels = Auth::user()
-            ->youtubeChannels()
-            ->orderBy('channel_title')
-            ->get();
-
-        return Inertia::render('Videos/Create', [
-            'youtubeChannels' => $youtubeChannels
-        ]);
+        return Inertia::render('Videos/Index', ['videos' => $r->user()->videos()->latest()->paginate(15)]);
     }
 
-    public function store(Request $request): RedirectResponse
+    public function create()
     {
-        $request->validate([
-            'topic' => 'required|string|max:255',
-            'youtube_channel_id' => 'nullable|exists:youtube_channels,id',
-            'duration' => 'nullable|integer|min:30|max:600', // 30 seconds to 10 minutes
-        ]);
+        return Inertia::render('Videos/Create', ['youtubeChannels' => Auth::user()->youtubeChannels()->get()]);
+    }
 
-        $user = $request->user();
-
-        // Check if user can generate more videos this month
-        if (!$user->canGenerateVideo()) {
-            return back()->with('error', 'You have reached your monthly video generation limit.');
+    public function store(Request $r)
+    {
+        $data = $r->validate(['topic' => 'required|string|max:200', 'duration' => 'required|integer|min:30|max:600', 'custom_script' => 'nullable|string|max:8000', 'youtube_channel_id' => ['nullable', Rule::exists('youtube_channels', 'id')->where('user_id', $r->user()->id)]]);
+        if (! config('video.pixabay_key') || (empty($data['custom_script']) && (! config('video.gemini_key') || ! config('video.gemini_model')))) {
+            return back()->with('error', 'Configure Pixabay e Gemini antes de gerar. Com roteiro próprio, Gemini não é necessário.');
         }
+        $v = DB::transaction(function () use ($r, $data) {
+            $user = User::whereKey($r->user()->id)->lockForUpdate()->firstOrFail();
+            if (! $user->canGenerateVideo()) {
+                throw ValidationException::withMessages(['topic' => 'Limite mensal atingido.']);
+            }
+            $v = $user->videos()->create(['title' => $data['topic'], 'topic' => $data['topic'], 'youtube_channel_id' => $data['youtube_channel_id'] ?? null, 'generated_script' => $data['custom_script'] ?? null, 'status' => 'generating_script']);
+            $g = VideoGeneration::create(['user_id' => $user->id, 'video_id' => $v->id, 'job_id' => (string) Str::uuid(), 'topic' => $data['topic'], 'parameters' => ['duration' => $data['duration']], 'status' => 'queued']);
+            $user->increment('videos_generated_this_month');
+            GenerateVideo::dispatch($v->id, $g->id)->afterCommit();
 
-        // Create video record
-        $video = Video::create([
-            'user_id' => $user->id,
-            'youtube_channel_id' => $request->youtube_channel_id,
-            'topic' => $request->topic,
-            'title' => '', // Will be generated
-            'status' => 'draft',
-        ]);
+            return $v;
+        });
 
-        // Create generation job
-        $jobId = Str::uuid();
-        VideoGeneration::create([
-            'user_id' => $user->id,
-            'video_id' => $video->id,
-            'job_id' => $jobId,
-            'topic' => $request->topic,
-            'parameters' => [
-                'duration' => $request->duration ?? 60,
-                'style' => 'informative', // Default style
-            ]
-        ]);
-
-        // Dispatch video generation job (will be implemented later)
-        // GenerateVideoJob::dispatch($video, $jobId);
-
-        // Update user's monthly count
-        $user->increment('videos_generated_this_month');
-
-        return redirect()->route('videos.show', $video)
-            ->with('success', 'Video generation started! This may take a few minutes.');
+        return redirect()->route('videos.show', $v);
     }
 
-    public function show(Video $video): Response
+    public function show(Video $video)
     {
-        $this->authorize('view', $video);
+        $this->own($video);
 
-        $video->load('youtubeChannel');
-
-        return Inertia::render('Videos/Show', [
-            'video' => $video
-        ]);
+        return Inertia::render('Videos/Show', ['video' => $video->load('youtubeChannel')]);
     }
 
-    public function edit(Video $video): Response
+    public function edit(Video $video)
     {
-        $this->authorize('update', $video);
+        $this->own($video);
 
-        $youtubeChannels = Auth::user()
-            ->youtubeChannels()
-            ->orderBy('channel_title')
-            ->get();
-
-        return Inertia::render('Videos/Create', [
-            'video' => $video,
-            'youtubeChannels' => $youtubeChannels
-        ]);
+        return redirect()->route('videos.show', $video);
     }
 
-    public function update(Request $request, Video $video): RedirectResponse
+    public function update(Request $r, Video $video)
     {
-        $this->authorize('update', $video);
+        $this->own($video);
+        abort_if($video->isProcessing(), 409);
+        $video->update($r->validate(['title' => 'required|string|max:100', 'description' => 'nullable|string|max:2000', 'youtube_channel_id' => ['nullable', Rule::exists('youtube_channels', 'id')->where('user_id', $r->user()->id)]]));
 
-        $request->validate([
-            'title' => 'required|string|max:255',
-            'description' => 'nullable|string|max:2000',
-            'youtube_channel_id' => 'nullable|exists:youtube_channels,id',
-        ]);
-
-        $video->update($request->only(['title', 'description', 'youtube_channel_id']));
-
-        return redirect()->route('videos.show', $video)
-            ->with('success', 'Video updated successfully.');
+        return back();
     }
 
-    public function destroy(Video $video): RedirectResponse
+    public function download(Request $r, Video $video)
     {
-        $this->authorize('delete', $video);
+        $this->own($video);
+        abort_unless(in_array($video->status, ['ready', 'uploaded']) && $video->final_video_path && Storage::disk('local')->exists($video->final_video_path), 404);
+        $path = Storage::disk('local')->path($video->final_video_path);
 
-        // Only allow deletion if video is not processing
-        if ($video->isProcessing()) {
-            return back()->with('error', 'Cannot delete a video that is currently being processed.');
-        }
+        return $r->boolean('preview') ? response()->file($path, ['Content-Type' => 'video/mp4', 'Cache-Control' => 'private, no-store']) : response()->download($path, 'video-'.$video->id.'.mp4');
+    }
 
+    public function destroy(Video $video)
+    {
+        $this->own($video);
+        abort_if($video->isProcessing(), 409);
+        Storage::disk('local')->deleteDirectory('videos/'.$video->id);
         $video->delete();
 
-        return redirect()->route('videos.index')
-            ->with('success', 'Video deleted successfully.');
+        return redirect()->route('videos.index');
     }
 
-    public function upload(Request $request, Video $video): RedirectResponse
+    public function upload(Request $r, Video $video)
     {
-        $this->authorize('update', $video);
+        $this->own($video);
 
-        if (!$video->isReady()) {
-            return back()->with('error', 'Video is not ready for upload.');
-        }
-
-        if (!$video->youtubeChannel) {
-            return back()->with('error', 'Please select a YouTube channel first.');
-        }
-
-        // Dispatch YouTube upload job (will be implemented later)
-        // UploadToYouTubeJob::dispatch($video);
-
-        $video->update(['status' => 'uploading']);
-
-        return back()->with('success', 'Video upload started.');
+        return back()->with('error','Envio automático ainda não está habilitado. Baixe o MP4 e envie pelo YouTube Studio.');
     }
 }

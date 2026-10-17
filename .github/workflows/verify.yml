@@ -1,0 +1,27 @@
+name: Verify personal video generator
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, pdo_sqlite, dom
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: composer install --no-interaction --prefer-dist
+      - run: npm ci && npm run build
+      - run: php vendor/bin/phpunit --filter VideoFlowTest
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: pip install -r scripts/requirements.txt
+      - run: python -m unittest discover -s tests/python -v
+      - run: docker build -f Dockerfile.personal -t videogenius-test .

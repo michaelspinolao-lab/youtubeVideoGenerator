@@ -14,6 +14,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // Enable CORS for web routes
         $middleware->web(append: [
             \Illuminate\Http\Middleware\HandleCors::class,
+            \App\Http\Middleware\HandleInertiaRequests::class,
         ]);
 
         $middleware->alias([

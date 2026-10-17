@@ -1,3 +1,5 @@
+> **Edição pessoal deste fork:** consulte [INSTALL-PT-BR.md](INSTALL-PT-BR.md). O README original abaixo descreve também funcionalidades que não estão implementadas. Publicação automática e piloto automático não estão disponíveis nesta edição.
+
 # 🎬 VideoGenius AI - YouTube Video Generator SaaS
 
 

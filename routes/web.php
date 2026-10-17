@@ -1,10 +1,9 @@
 <?php
 
-use App\Http\Controllers\Auth\GoogleController;
 use App\Http\Controllers\Auth\DemoController;
+use App\Http\Controllers\Auth\GoogleController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\VideoController;
-use App\Http\Controllers\YoutubeChannelController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -21,7 +20,7 @@ Route::get('/', function () {
 
 Route::get('/login', function () {
     return Inertia::render('Auth/Login', [
-        'error' => session('error')
+        'error' => session('error'),
     ]);
 })->name('login');
 
@@ -32,7 +31,11 @@ Route::prefix('auth/google')->middleware('cors')->group(function () {
 });
 
 // Demo Login Route (for testing without OAuth)
-Route::get('/demo-login', [DemoController::class, 'loginDemo'])->name('demo.login');
+Route::get('/demo-login', function () {
+    abort_unless(app()->environment('local', 'testing'), 404);
+
+    return app(DemoController::class)->loginDemo();
+})->name('demo.login');
 
 Route::post('/logout', [GoogleController::class, 'logout'])->name('logout');
 
@@ -51,7 +54,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::patch('/profile', function (Request $request) {
         $request->validate([
             'name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255|unique:users,email,' . $request->user()->id,
+            'email' => 'required|string|email|max:255|unique:users,email,'.$request->user()->id,
         ]);
 
         $request->user()->update([
@@ -64,10 +67,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     // Video Management
     Route::resource('videos', VideoController::class);
+    Route::get('/videos/{video}/download', [VideoController::class, 'download'])->name('videos.download');
     Route::post('/videos/{video}/upload', [VideoController::class, 'upload'])->name('videos.upload');
 
     // YouTube Channel Management
-    Route::resource('youtube-channels', YoutubeChannelController::class);
+    Route::get('/youtube-channels', fn () => redirect()->route('google.redirect'))->name('youtube-channels.index');
 
     // API Routes for frontend
     Route::prefix('api')->group(function () {
@@ -77,6 +81,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         Route::get('/videos/{video}/status', function (Request $request, $video) {
             $videoModel = $request->user()->videos()->findOrFail($video);
+
             return response()->json(['status' => $videoModel->status]);
         });
     });

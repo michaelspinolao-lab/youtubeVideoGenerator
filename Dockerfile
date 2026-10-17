@@ -1,4 +1,4 @@
-FROM php:8.2-fpm
+FROM php:8.3-fpm
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -48,7 +48,7 @@ RUN chmod +x /app/scripts/*.py
 RUN composer install --no-dev --optimize-autoloader
 
 # Install Node.js dependencies and build assets
-RUN npm install --legacy-peer-deps && npm run build
+RUN npm ci && npm run build
 
 # Set permissions
 RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache
