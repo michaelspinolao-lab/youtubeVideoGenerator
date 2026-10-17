@@ -1,0 +1,6 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Autorizar ChatGPT — VideoGenius</title>
+<style>body{font:18px system-ui;background:#f4f4fa;color:#222;margin:0;padding:20px}main{max-width:540px;margin:30px auto;padding:24px;background:white;border-radius:20px}button{display:block;width:100%;font:inherit;padding:16px;margin-top:14px;border:0;border-radius:10px;background:#5145cd;color:white}.secondary{background:#eee;color:#222}li{margin:12px 0}p{line-height:1.5}</style></head><body><main>
+<h1>Conectar VideoGenius ao ChatGPT</h1><p>Você permite que o ChatGPT:</p><ul><li>Consulte sua cota e seus vídeos;</li><li>Crie vídeos quando você solicitar, usando sua cota;</li><li>Gere links temporários para baixar seus vídeos.</li></ul>
+<p>A conexão não permite publicar em redes sociais. Você pode revogar o acesso na página de integração do VideoGenius.</p>
+<form method="post" action="/oauth/authorize">@csrf<input type="hidden" name="nonce" value="{{ $nonce }}"><button name="decision" value="allow">Permitir conexão</button><button class="secondary" name="decision" value="deny">Cancelar</button></form>
+</main></body></html>

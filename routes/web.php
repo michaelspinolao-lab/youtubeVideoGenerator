@@ -97,3 +97,6 @@ Route::middleware(['auth', 'throttle:10,1'])->group(function () {
     Route::post('/integrations/chatgpt', [\App\Http\Controllers\McpConnectionController::class, 'create']);
     Route::post('/integrations/chatgpt/revoke', [\App\Http\Controllers\McpConnectionController::class, 'revoke']);
 });
+
+Route::get('/oauth/authorize', [\App\Http\Controllers\McpOAuthController::class, 'authorize'])->middleware('throttle:30,1');
+Route::post('/oauth/authorize', [\App\Http\Controllers\McpOAuthController::class, 'approve'])->middleware(['auth', 'throttle:30,1']);

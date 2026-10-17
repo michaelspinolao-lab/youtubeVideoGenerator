@@ -21,7 +21,7 @@ class McpController extends Controller
             return null;
         }
         $token = DB::table('mcp_tokens')->where('token_hash', hash('sha256', $bearer))->where('expires_at', '>', now())->first();
-        $u = $token ? User::find($token->user_id) : null;
+        $u = $token ? User::find($token->user_id) : McpOAuthController::tokenOwner($bearer);
 
         return $u && config('video.allowed_email') && strcasecmp($u->email, config('video.allowed_email')) === 0 ? $u : null;
     }
@@ -34,7 +34,7 @@ class McpController extends Controller
         }
         $u = $this->owner($r);
         if (! $u) {
-            return response()->json(['error' => 'Uma chave VideoGenius válida é necessária. Crie em /integrations/chatgpt.'], 401, ['WWW-Authenticate' => 'Bearer realm="VideoGenius"', 'Cache-Control' => 'no-store']);
+            return response()->json(['error' => 'Uma chave VideoGenius válida é necessária. Crie em /integrations/chatgpt.'], 401, ['WWW-Authenticate' => 'Bearer resource_metadata="'.McpOAuthController::issuer().'/.well-known/oauth-protected-resource", scope="videogenius"', 'Cache-Control' => 'no-store']);
         }
         if (! $r->isMethod('post')) {
             return response('', 405, ['Allow' => 'POST']);
@@ -178,6 +178,6 @@ class McpController extends Controller
     {
         abort_unless(in_array($video->status, ['ready', 'uploaded']) && $video->final_video_path && Storage::disk('local')->exists($video->final_video_path), 404);
 
-        return response()->download(Storage::disk('local')->path($video->final_video_path),'video-'.$video->id.'.mp4',['Cache-Control' => 'private, no-store', 'Referrer-Policy' => 'no-referrer']);
+        return response()->download(Storage::disk('local')->path($video->final_video_path), 'video-'.$video->id.'.mp4', ['Cache-Control' => 'private, no-store', 'Referrer-Policy' => 'no-referrer']);
     }
 }

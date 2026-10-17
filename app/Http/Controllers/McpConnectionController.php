@@ -16,7 +16,7 @@ class McpConnectionController extends Controller
     {
         $this->owner($r);
 
-        return response()->view('mcp-connection', ['token' => null, 'active' => DB::table('mcp_tokens')->where('user_id', $r->user()->id)->where('expires_at', '>', now())->exists()])->header('Cache-Control', 'no-store')->header('Referrer-Policy', 'no-referrer');
+        return response()->view('mcp-connection', ['token' => null, 'oauthActive' => DB::table('mcp_oauth_grants')->where('user_id', $r->user()->id)->whereNull('revoked_at')->where('expires_at', '>', now())->exists(), 'active' => DB::table('mcp_tokens')->where('user_id', $r->user()->id)->where('expires_at', '>', now())->exists()])->header('Cache-Control', 'no-store')->header('Referrer-Policy', 'no-referrer');
     }
 
     public function create(Request $r)
@@ -35,6 +35,8 @@ class McpConnectionController extends Controller
     {
         $this->owner($r);
         DB::table('mcp_tokens')->where('user_id', $r->user()->id)->delete();
+        DB::table('mcp_oauth_grants')->where('user_id', $r->user()->id)->update(['revoked_at' => now()]);
+        DB::table('mcp_oauth_codes')->where('user_id', $r->user()->id)->delete();
 
         return redirect('/integrations/chatgpt');
     }
