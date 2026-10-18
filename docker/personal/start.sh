@@ -10,6 +10,10 @@ chown -R www-data:www-data storage bootstrap/cache
 php artisan migrate --force
 php artisan config:cache
 php artisan view:cache
+# This personal container owns the persistent disk exclusively and has one worker.
+# A deploy can kill that worker before its database reservation expires.
+# Recover its existing jobs before starting any new worker, never on a live worker.
+php artisan video:recover-interrupted
 # Optional explicit operator recovery. The stable request ID makes restarts idempotent.
 if [ -n "${VIDEO_RETRY_ID:-}" ] && [ -n "${VIDEO_RETRY_REQUEST_ID:-}" ]; then
     php artisan video:retry "$VIDEO_RETRY_ID" "$VIDEO_RETRY_REQUEST_ID" || echo 'Requested video recovery was not queued.'

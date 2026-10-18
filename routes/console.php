@@ -7,6 +7,11 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
+Artisan::command('video:recover-interrupted', function () {
+    $count = app(\App\Services\InterruptedVideoRecovery::class)->recover();
+    $this->info('Interrupted video jobs recovered: '.$count.'; quota unchanged.');
+})->purpose('Personal container boot only: recover interrupted jobs before starting its sole worker');
+
 Artisan::command('video:retry {video_id} {request_id}', function () {
     $id = (string) $this->argument('video_id');
     $key = (string) $this->argument('request_id');
