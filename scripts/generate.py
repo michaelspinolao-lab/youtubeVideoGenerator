@@ -1,5 +1,5 @@
 """Private worker: JSON stdin, progress JSON stdout. No credentials in arguments/logs."""
-import json, os, subprocess, sys
+import json, os, re, subprocess, sys
 from pathlib import Path
 from urllib.parse import urlparse
 import requests
@@ -53,6 +53,31 @@ def download(url, dest):
                 if size > 100*1024*1024: raise ValueError('Media exceeds 100MB')
                 f.write(chunk)
 
+def search_stock(topic):
+    # Try the original search, then shorter Portuguese phrases from the same topic.
+    # Never fall back to unrelated/random footage when a specific topic has no hits.
+    topic = topic.strip()
+    words = re.findall(r"[^\W_]+", re.split(r'[:.!?;]', topic, maxsplit=1)[0], re.UNICODE)
+    candidates = [(topic[:100], 'en')]
+    for count in (4, 2, 1):
+        query = ' '.join(words[:count])[:100]
+        if query and (query, 'pt') not in candidates:
+            candidates.append((query, 'pt'))
+    for attempt, (query, language) in enumerate(candidates, 1):
+        response = requests.get('https://pixabay.com/api/videos/', params={
+            'key': os.environ['PIXABAY_API_KEY'], 'q': query, 'lang': language,
+            'per_page': 5, 'safesearch': 'true'}, timeout=40)
+        if response.status_code in (401, 403) or (response.status_code == 400 and 'api key' in response.text.lower()):
+            raise GenerationError('stock_key_rejected')
+        if response.status_code == 429:
+            raise GenerationError('stock_rate_limited')
+        response.raise_for_status()
+        hits = response.json().get('hits', [])
+        print(json.dumps({'event': 'stock_search', 'attempt': attempt, 'matches': len(hits)}), flush=True)
+        if hits:
+            return hits[:5]
+    raise GenerationError('no_stock_footage')
+
 def main(data):
     directory=Path(data['directory']); directory.mkdir(parents=True, exist_ok=True)
     progress('generating_script')
@@ -72,10 +97,8 @@ def main(data):
             raise GenerationError('photo_missing')
     else:
         progress('fetching_visuals')
-        response=requests.get('https://pixabay.com/api/videos/',params={'key':os.environ['PIXABAY_API_KEY'],'q':data['topic'][:100],'per_page':5,'safesearch':'true'},timeout=40)
-        response.raise_for_status()
         clips=[]; sources=[]
-        for i,hit in enumerate(response.json().get('hits',[])[:5]):
+        for i,hit in enumerate(search_stock(data['topic'])):
             variant=hit.get('videos',{}).get('medium') or hit.get('videos',{}).get('small')
             if not variant: continue
             dest=directory/f'clip-{i}.mp4'; download(variant['url'],dest);clips.append(dest)

@@ -154,6 +154,22 @@ class McpTest extends TestCase
         return base64_decode('iVBORw0KGgoAAAANSUhEUgAAAHgAAADICAIAAACszLLwAAAByElEQVR4nO3QQREAIRDAsAX/nu9UUB4kCjpdM99w3r4d8AqjI0ZHjI4YHTE6YnTE6IjREaMjRkeMjhgdMTpidMToiNERoyNGR4yOGB0xOmJ0xOiI0RGjI0ZHjI4YHTE6YnTE6IjREaMjRkeMjhgdMTpidMToiNERoyNGR4yOGB0xOmJ0xOiI0RGjI0ZHjI4YHTE6YnTE6IjREaMjRkeMjhgdMTpidMToiNERoyNGR4yOGB0xOmJ0xOiI0RGjI0ZHjI4YHTE6YnTE6IjREaMjRkeMjhgdMTpidMToiNERoyNGR4yOGB0xOmJ0xOiI0RGjI0ZHjI4YHTE6YnTE6IjREaMjRkeMjhgdMTpidMToiNERoyNGR4yOGB0xOmJ0xOiI0RGjI0ZHjI4YHTE6YnTE6IjREaMjRkeMjhgdMTpidMToiNERoyNGR4yOGB0xOmJ0xOiI0RGjI0ZHjI4YHTE6YnTE6IjREaMjRkeMjhgdMTpidMToiNERoyNGR4yOGB0xOmJ0xOiI0RGjI0ZHjI4YHTE6YnTE6IjREaMjRkeMjhgdMTpidMToiNERoyNGR4yOGB0xOmJ0xOiI0RGjI0ZHjI4YHTE6YnTkB3itAo/GZc1yAAAAAElFTkSuQmCC');
     }
 
+    public function test_web_accepts_photo_and_script_without_stock_or_gemini(): void
+    {
+        Queue::fake();
+        Storage::fake('local');
+        config(['video.pixabay_key' => null, 'video.gemini_key' => null, 'video.gemini_model' => null]);
+        $photo = \Illuminate\Http\UploadedFile::fake()->createWithContent('look.png', $this->pngFixture());
+        $this->actingAs($this->owner)->post('/videos', [
+            'topic' => 'Conjunto creme', 'duration' => 30, 'custom_script' => 'Elegância em cada detalhe.', 'photo' => $photo,
+        ])->assertRedirect();
+        $this->assertSame(1, Video::count());
+        $this->assertSame(1, DB::table('video_photos')->count());
+        $this->assertSame(DB::table('video_photos')->first()->id, \App\Models\VideoGeneration::first()->parameters['photo_id']);
+        Queue::assertPushed(GenerateVideo::class, 1);
+        $this->assertSame(1, $this->owner->fresh()->videos_generated_this_month);
+    }
+
     public function test_attachment_upload_deduplication_and_file_schema(): void
     {
         Storage::fake('local');

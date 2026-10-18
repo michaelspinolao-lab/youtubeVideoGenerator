@@ -17,6 +17,8 @@ class GenerateVideo implements ShouldQueue
         'no_stock_footage' => 'O Pixabay não encontrou clipes para este tema. Use poucas palavras ou envie uma foto.',
         'script_provider_failed' => 'Falha ao criar o roteiro com Gemini. Envie um roteiro próprio.',
         'stock_provider_failed' => 'Falha ao buscar ou baixar os clipes do Pixabay. Verifique a chave e a disponibilidade do provedor.',
+        'stock_key_rejected' => 'O Pixabay recusou a chave de acesso. Corrija a chave no servidor ou use uma foto própria.',
+        'stock_rate_limited' => 'O Pixabay atingiu o limite de consultas. Aguarde e use Tentar novamente, sem outra cota.',
         'voice_provider_failed' => 'O serviço de narração não respondeu ou recusou a solicitação.',
         'render_failed' => 'Falha na montagem do MP4. Verifique a imagem e os recursos do servidor.',
         'invalid_audio' => 'A duração da narração é inválida.',
@@ -59,6 +61,9 @@ class GenerateVideo implements ShouldQueue
                 $line = substr($buffer, 0, $pos);
                 $buffer = substr($buffer, $pos + 1);
                 $event = json_decode($line, true);
+                if (($event['event'] ?? '') === 'stock_search') {
+                    \Illuminate\Support\Facades\Log::channel('stderr')->info('Video stock search', ['video_id' => $v->id, 'attempt' => (int) ($event['attempt'] ?? 0), 'matches' => (int) ($event['matches'] ?? 0)]);
+                }
                 if (isset(self::ERRORS[$event['error_code'] ?? ''])) {
                     $errorCode = $event['error_code'];
                 }
@@ -83,6 +88,6 @@ class GenerateVideo implements ShouldQueue
         $code = isset(self::ERRORS[$e?->getMessage() ?? '']) ? $e->getMessage() : 'worker_failed';
         Video::whereKey($this->videoId)->update(['status' => 'failed', 'failure_reason' => self::ERRORS[$code]]);
         VideoGeneration::whereKey($this->generationId)->update(['status' => 'failed', 'completed_at' => now(), 'error_message' => $code]);
-        \Illuminate\Support\Facades\Log::warning('Video generation failed', ['video_id' => $this->videoId, 'error_code' => $code]);
+        \Illuminate\Support\Facades\Log::channel('stderr')->warning('Video generation failed', ['video_id' => $this->videoId, 'error_code' => $code, 'exception_type' => $e ? get_class($e) : null]);
     }
 }

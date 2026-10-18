@@ -70,7 +70,7 @@ class VideoFlowTest extends TestCase
         Queue::fake();
         config(['app.key' => 'base64:'.base64_encode(str_repeat('x', 32)), 'video.pixabay_key' => null]);
         $u = User::factory()->create();
-        $this->actingAs($u)->post('/videos', ['topic' => 'Test', 'duration' => 60])->assertSessionHas('error');
+        $this->actingAs($u)->post('/videos', ['topic' => 'Test', 'duration' => 60])->assertSessionHasErrors('photo');
         Queue::assertNothingPushed();
         $this->assertSame(0, Video::count());
     }
@@ -80,6 +80,50 @@ class VideoFlowTest extends TestCase
         $this->actingAs(User::factory()->create());
         $this->get('/dashboard')->assertOk();
         $this->get('/videos/create')->assertOk();
+    }
+
+    public function test_missing_script_has_a_field_error_before_quota_is_used(): void
+    {
+        Queue::fake();
+        config(['video.gemini_key' => null, 'video.gemini_model' => null]);
+        $u = User::factory()->create();
+        $this->actingAs($u)->get('/videos/create')->assertInertia(fn ($page) => $page->where('canGenerateScript', false));
+        $this->post('/videos', ['topic' => 'Moda', 'duration' => 30])->assertSessionHasErrors('custom_script');
+        $this->assertSame(0, $u->fresh()->videos_generated_this_month);
+        Queue::assertNothingPushed();
+        $this->post('/videos', ['topic' => 'Moda', 'duration' => 30, 'custom_script' => 'Elegância em cada detalhe.'])->assertRedirect();
+        Queue::assertPushed(GenerateVideo::class, 1);
+    }
+
+    public function test_web_retry_is_private_idempotent_and_free(): void
+    {
+        Queue::fake();
+        $u = User::factory()->create();
+        $v = app(\App\Services\VideoCreation::class)->create($u, ['topic' => 'Moda', 'duration' => 30, 'custom_script' => 'Um roteiro.']);
+        $v->update(['status' => 'failed']);
+        $request = ['request_id' => 'retry-web-12345'];
+        $this->actingAs(User::factory()->create())->post('/videos/'.$v->id.'/retry', $request)->assertNotFound();
+        $this->actingAs($u)->post('/videos/'.$v->id.'/retry', $request)->assertRedirect('/videos/'.$v->id);
+        $this->post('/videos/'.$v->id.'/retry', $request)->assertRedirect('/videos/'.$v->id);
+        Queue::assertPushed(GenerateVideo::class, 2);
+        $this->assertSame(1, $u->fresh()->videos_generated_this_month);
+        $this->assertSame(1, Video::count());
+    }
+
+    public function test_operator_recovery_checks_owner_and_does_not_repeat_on_restart(): void
+    {
+        Queue::fake();
+        $u = User::factory()->create();
+        $v = app(\App\Services\VideoCreation::class)->create($u, ['topic' => 'Moda', 'duration' => 30, 'custom_script' => 'Um roteiro.']);
+        $v->update(['status' => 'failed']);
+        config(['video.allowed_email' => 'another@example.com']);
+        $args = ['video_id' => $v->id, 'request_id' => 'operator-recovery-123'];
+        $this->artisan('video:retry', $args)->assertExitCode(1);
+        config(['video.allowed_email' => $u->email]);
+        $this->artisan('video:retry', $args)->assertExitCode(0);
+        $this->artisan('video:retry', $args)->assertExitCode(0);
+        Queue::assertPushed(GenerateVideo::class, 2);
+        $this->assertSame(1, $u->fresh()->videos_generated_this_month);
     }
 
     public function test_legacy_api_not_exposed(): void

@@ -67,6 +67,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     // Video Management
     Route::resource('videos', VideoController::class);
+    Route::post('/videos/{video}/retry', [VideoController::class, 'retry'])->middleware('throttle:5,1')->name('videos.retry');
     Route::get('/videos/{video}/download', [VideoController::class, 'download'])->name('videos.download');
     Route::post('/videos/{video}/upload', [VideoController::class, 'upload'])->name('videos.upload');
 

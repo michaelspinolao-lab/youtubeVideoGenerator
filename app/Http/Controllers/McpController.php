@@ -60,7 +60,7 @@ class McpController extends Controller
         if ($m['method'] === 'initialize') {
             $version = in_array($params['protocolVersion'] ?? '', ['2024-11-05', '2025-03-26', '2025-06-18', '2025-11-25']) ? $params['protocolVersion'] : '2025-06-18';
 
-            return $this->result($id, ['protocolVersion' => $version, 'capabilities' => ['tools' => ['listChanged' => false]], 'serverInfo' => ['name' => 'videogenius', 'version' => '1.2.0'], 'instructions' => 'Para fotos anexadas ao chat, use upload_photo e passe o photo_id retornado em create_video. Escreva a narração em custom_script; isso dispensa Gemini. prepare_video confere o pedido sem consumir cota. Gere apenas quando solicitado. Preserve request_id nas repetições. retry_video tenta novamente um vídeo falho sem nova cota. Não repita falhas automaticamente. Fotos recebem zoom, não animação corporal. Esta integração gera MP4 e não publica em redes sociais.']);
+            return $this->result($id, ['protocolVersion' => $version, 'capabilities' => ['tools' => ['listChanged' => false]], 'serverInfo' => ['name' => 'videogenius', 'version' => '1.2.1'], 'instructions' => 'Para fotos anexadas ao chat, use upload_photo e passe o photo_id retornado em create_video. Escreva a narração em custom_script; isso dispensa Gemini. prepare_video confere o pedido sem consumir cota. Gere apenas quando solicitado. Preserve request_id nas repetições. retry_video tenta novamente um vídeo falho sem nova cota. Não repita falhas automaticamente. Fotos recebem zoom, não animação corporal. Esta integração gera MP4 e não publica em redes sociais.']);
         }
         if ($m['method'] === 'ping') {
             return $this->result($id, (object) []);
@@ -163,7 +163,7 @@ class McpController extends Controller
         if ($name === 'account_status') {
             $u->canGenerateVideo();
 
-            return ['monthly_quota' => $u->monthly_video_quota, 'used' => $u->videos_generated_this_month, 'remaining' => max(0, $u->monthly_video_quota - $u->videos_generated_this_month), 'pixabay_configured' => (bool) config('video.pixabay_key'), 'gemini_configured' => (bool) (config('video.gemini_key') && config('video.gemini_model')), 'custom_script_supported' => true, 'photo_video_supported' => true, 'attachment_upload_supported' => true, 'server_version' => '1.2.0', 'photo_upload_url' => rtrim(config('app.url'), '/').'/photos'];
+            return ['monthly_quota' => $u->monthly_video_quota, 'used' => $u->videos_generated_this_month, 'remaining' => max(0, $u->monthly_video_quota - $u->videos_generated_this_month), 'pixabay_configured' => (bool) config('video.pixabay_key'), 'gemini_configured' => (bool) (config('video.gemini_key') && config('video.gemini_model')), 'custom_script_supported' => true, 'photo_video_supported' => true, 'attachment_upload_supported' => true, 'server_version' => '1.2.1', 'photo_upload_url' => rtrim(config('app.url'), '/').'/photos'];
         }
         if ($name === 'list_videos') {
             $d = Validator::make($a, ['page' => 'sometimes|integer|min:1|max:100000'])->validate();
