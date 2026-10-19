@@ -3,6 +3,7 @@ import json, os, re, subprocess, sys
 from pathlib import Path
 from urllib.parse import urlparse
 import requests
+from media_pipeline import speech, assemble_media, VoiceError
 
 STAGE = 'initializing'
 
@@ -82,17 +83,21 @@ def main(data):
     directory=Path(data['directory']); directory.mkdir(parents=True, exist_ok=True)
     progress('generating_script')
     script=(data.get('script') or '').strip()
-    if not script:
+    narration = data.get('narration', True)
+    if not script and narration:
         model=os.environ['GEMINI_MODEL']
         if not model or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._' for c in model):
             raise ValueError('Invalid model')
         response=requests.post(f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent',headers={'x-goog-api-key':os.environ['GEMINI_API_KEY']},json={'contents':[{'parts':[{'text':f"Escreva somente a narração em português brasileiro, sem markdown, para um vídeo sobre: {data['topic']}. Aproximadamente {int(data['duration'])*2} palavras. Não invente estatísticas nem prometa resultados garantidos."}]}]},timeout=90)
         response.raise_for_status()
         script=''.join(x.get('text','') for x in response.json()['candidates'][0]['content']['parts']).strip()
-    if not script or len(script)>10000: raise ValueError('Invalid script')
+    if (narration and not script) or len(script)>10000: raise ValueError('Invalid script')
+    media = data.get('media') or []
     clips=[]; sources=[]
     photo = data.get('photo')
-    if photo:
+    if media:
+        if not all(Path(m['path']).is_file() for m in media): raise GenerationError('photo_missing')
+    elif photo:
         if not Path(photo).is_file():
             raise GenerationError('photo_missing')
     else:
@@ -105,11 +110,18 @@ def main(data):
             sources.append({'id':hit['id'],'page':hit.get('pageURL'),'author':hit.get('user')})
         if not clips: raise GenerationError('no_stock_footage')
     progress('generating_voiceover')
-    from gtts import gTTS
-    audio=directory/'voice.mp3'
-    gTTS(text=script,lang='pt',tld='com.br',timeout=(10,60)).save(str(audio))
+    audio = None
+    if narration:
+        if data.get('voice_provider') == 'elevenlabs':
+            audio = speech(script, data.get('voice_id'), directory)
+        else:
+            from gtts import gTTS
+            audio=directory/'voice.mp3'
+            gTTS(text=script,lang='pt',tld='com.br',timeout=(10,60)).save(str(audio))
     progress('assembling_video')
-    if photo:
+    if media:
+        seconds=assemble_media(media,audio,directory/'final.mp4',directory,data['duration'],data.get('aspect_ratio','vertical'),data.get('original_audio',True))
+    elif photo:
         seconds = duration(audio)
         if not 0 < seconds <= 900:
             raise GenerationError('invalid_audio')
@@ -135,7 +147,7 @@ if __name__=='__main__':
     try: main(json.load(sys.stdin))
     except Exception as error:
         # Only stable codes leave the worker: never include exception text or provider URLs.
-        code = error.code if isinstance(error, GenerationError) else {
+        code = error.code if isinstance(error, (GenerationError, VoiceError)) else {
             'generating_script': 'script_provider_failed',
             'fetching_visuals': 'stock_provider_failed',
             'generating_voiceover': 'voice_provider_failed',

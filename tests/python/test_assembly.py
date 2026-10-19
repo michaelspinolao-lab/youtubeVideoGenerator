@@ -1,4 +1,5 @@
-import importlib.util, pathlib, subprocess, tempfile, unittest
+import importlib.util, pathlib, subprocess, tempfile, unittest, sys
+sys.path.insert(0,str(pathlib.Path(__file__).parents[2]/"scripts"))
 spec=importlib.util.spec_from_file_location('generate',pathlib.Path(__file__).parents[2]/'scripts/generate.py'); module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
 class AssemblyTest(unittest.TestCase):
  def test_multiple_clips_preserve_entire_narration(self):

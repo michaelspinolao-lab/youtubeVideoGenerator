@@ -31,15 +31,20 @@ class VideoController extends Controller
 
     public function store(Request $r)
     {
-        $scriptRequired = ! (config('video.gemini_key') && config('video.gemini_model'));
+        $scriptRequired = $r->boolean('narration', true) && ($r->input('voice_provider') === 'elevenlabs' || ! (config('video.gemini_key') && config('video.gemini_model')));
         $data = $r->validate([
-            'photo_id' => 'nullable|uuid|prohibited_with:photo',
+            'media_ids' => 'nullable|array|max:12|prohibits:photo,photo_id',
+            'media_ids.*' => 'required|uuid|distinct',
+            'narration' => 'sometimes|boolean', 'original_audio' => 'sometimes|boolean',
+            'aspect_ratio' => 'sometimes|in:vertical,horizontal',
+            'voice_provider' => 'sometimes|in:standard,elevenlabs',
+            'photo_id' => 'nullable|uuid|prohibits:photo',
             'photo' => 'nullable|file|mimes:jpg,jpeg,png|max:5120|dimensions:min_width=100,min_height=100,max_width=8000,max_height=8000',
             'topic' => 'required|string|max:200', 'duration' => 'required|integer|min:10|max:600',
             'custom_script' => [Rule::requiredIf($scriptRequired), 'nullable', 'string', 'max:8000'],
             'youtube_channel_id' => ['nullable', Rule::exists('youtube_channels', 'id')->where('user_id', $r->user()->id)],
         ], ['custom_script.required' => 'Escreva ou cole o texto da narração. A criação automática de roteiro ainda não está configurada.']);
-        if (empty($data['photo_id']) && ! $r->hasFile('photo') && ! config('video.pixabay_key')) {
+        if (empty($data['media_ids']) && empty($data['photo_id']) && ! $r->hasFile('photo') && ! config('video.pixabay_key')) {
             return back()->withErrors(['photo' => 'Envie uma foto. A busca de clipes ainda não está configurada.']);
         }
         if ($r->hasFile('photo')) {

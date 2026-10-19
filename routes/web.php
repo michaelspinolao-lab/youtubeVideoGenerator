@@ -107,3 +107,11 @@ Route::middleware(['auth', 'throttle:30,1'])->group(function () {
     Route::post('/photos', [\App\Http\Controllers\VideoPhotoController::class, 'store']);
     Route::get('/photos/{photo}', [\App\Http\Controllers\VideoPhotoController::class, 'show']);
 });
+
+Route::middleware(['auth', 'throttle:30,1'])->group(function () {
+    Route::get('/integrations/elevenlabs', [\App\Http\Controllers\ElevenLabsController::class, 'index']);
+    Route::post('/integrations/elevenlabs', [\App\Http\Controllers\ElevenLabsController::class, 'store']);
+    Route::get('/media', [\App\Http\Controllers\VideoMediaController::class, 'index']);
+    Route::post('/media', [\App\Http\Controllers\VideoMediaController::class, 'store']);
+    Route::get('/media/{media}', [\App\Http\Controllers\VideoMediaController::class, 'show']);
+});

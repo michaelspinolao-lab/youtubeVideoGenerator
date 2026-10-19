@@ -44,6 +44,7 @@ class User extends Authenticatable
      * @var list<string>
      */
     protected $hidden = [
+        'elevenlabs_api_key',
         'password',
         'remember_token', 'google_access_token', 'google_refresh_token', 'youtube_access_token', 'youtube_refresh_token',
     ];
@@ -54,6 +55,7 @@ class User extends Authenticatable
      * @return array<string, string>
      */
     protected $casts = [
+        'elevenlabs_api_key' => 'encrypted',
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
         'google_scopes' => 'array',
