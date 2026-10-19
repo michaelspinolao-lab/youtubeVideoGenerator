@@ -9,6 +9,8 @@ function selectFile(event){form.photo=event.target.files[0]||null;if(form.photo)
   <AuthenticatedLayout>
     <main class="max-w-2xl mx-auto p-6 space-y-5">
       <h1 class="text-2xl font-bold">Criar vídeo</h1>
+      <a href="/media" class="block rounded bg-indigo-700 text-white p-4">Usar minhas fotos e vídeos (incluindo iPhone)</a>
+      <a href="/integrations/elevenlabs" class="block text-indigo-700 underline">Conectar ElevenLabs e escolher voz</a>
       <p>Crie um vídeo narrado em português. Sua foto recebe zoom suave em formato vertical; sem foto, usamos clipes de banco em formato horizontal.</p>
       <p class="text-sm text-gray-600">Este modo não anima a pessoa da foto nem cria movimentos corporais com IA.</p>
       <form @submit.prevent="form.post(route('videos.store'))" class="space-y-5">

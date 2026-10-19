@@ -14,6 +14,17 @@ class VideoCreation
 {
     public function create(User $owner, array $data): Video
     {
+        $media = app(MediaImport::class)->resolve($owner, $data['media_ids'] ?? []);
+        $narration = (bool) ($data['narration'] ?? true);
+        if (! $narration && ! $media) {
+            throw ValidationException::withMessages(['media_ids' => 'Envie seus arquivos para gerar sem narração.']);
+        }
+        $provider = $data['voice_provider'] ?? 'standard';
+        if ($narration && $provider === 'elevenlabs' && (! $owner->elevenlabs_api_key || ! $owner->elevenlabs_voice_id)) {
+            throw ValidationException::withMessages(['voice_provider' => 'Conecte a ElevenLabs e escolha uma voz em /integrations/elevenlabs.']);
+        }
+        $data['media'] = $media;
+        $data['voice_id'] = $provider === 'elevenlabs' ? $owner->elevenlabs_voice_id : null;
         $photo = null;
         if (! empty($data['photo_id'])) {
             $photo = DB::table('video_photos')->where('id', $data['photo_id'])->where('user_id', $owner->id)->first();
@@ -28,7 +39,7 @@ class VideoCreation
                 throw ValidationException::withMessages(['topic' => 'Limite mensal atingido.']);
             }
             $v = $user->videos()->create(['title' => $data['topic'], 'topic' => $data['topic'], 'youtube_channel_id' => $data['youtube_channel_id'] ?? null, 'generated_script' => $data['custom_script'] ?? null, 'status' => 'generating_script']);
-            $g = VideoGeneration::create(['user_id' => $user->id, 'video_id' => $v->id, 'job_id' => (string) Str::uuid(), 'topic' => $data['topic'], 'parameters' => ['duration' => $data['duration'], 'photo_path' => $data['photo_path'], 'photo_id' => $data['photo_id'] ?? null], 'status' => 'queued']);
+            $g = VideoGeneration::create(['user_id' => $user->id, 'video_id' => $v->id, 'job_id' => (string) Str::uuid(), 'topic' => $data['topic'], 'parameters' => ['duration' => $data['duration'], 'photo_path' => $data['photo_path'], 'photo_id' => $data['photo_id'] ?? null, 'media' => $data['media'], 'narration' => (bool) ($data['narration'] ?? true), 'original_audio' => (bool) ($data['original_audio'] ?? true), 'aspect_ratio' => $data['aspect_ratio'] ?? 'vertical', 'voice_provider' => $data['voice_provider'] ?? 'standard', 'voice_id' => $data['voice_id']], 'status' => 'queued']);
             $user->increment('videos_generated_this_month');
             GenerateVideo::dispatch($v->id, $g->id)->afterCommit();
 

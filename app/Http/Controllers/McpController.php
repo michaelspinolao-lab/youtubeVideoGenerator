@@ -60,7 +60,7 @@ class McpController extends Controller
         if ($m['method'] === 'initialize') {
             $version = in_array($params['protocolVersion'] ?? '', ['2024-11-05', '2025-03-26', '2025-06-18', '2025-11-25']) ? $params['protocolVersion'] : '2025-06-18';
 
-            return $this->result($id, ['protocolVersion' => $version, 'capabilities' => ['tools' => ['listChanged' => false]], 'serverInfo' => ['name' => 'videogenius', 'version' => '1.2.1'], 'instructions' => 'Para fotos anexadas ao chat, use upload_photo e passe o photo_id retornado em create_video. Escreva a narração em custom_script; isso dispensa Gemini. prepare_video confere o pedido sem consumir cota. Gere apenas quando solicitado. Preserve request_id nas repetições. retry_video tenta novamente um vídeo falho sem nova cota. Não repita falhas automaticamente. Fotos recebem zoom, não animação corporal. Esta integração gera MP4 e não publica em redes sociais.']);
+            return $this->result($id, ['protocolVersion' => $version, 'capabilities' => ['tools' => ['listChanged' => false]], 'serverInfo' => ['name' => 'videogenius', 'version' => '1.3.0'], 'instructions' => 'Use upload_media para fotos ou vídeos anexados e list_media para arquivos existentes; passe media_ids em ordem. narration=false mantém som original sem TTS. voice_provider=elevenlabs usa créditos ElevenLabs e requer configuração em /integrations/elevenlabs; informe esse custo antes de gerar. Nunca peça chaves no chat. Para fotos anexadas ao chat, use upload_photo e passe o photo_id retornado em create_video. Escreva a narração em custom_script; isso dispensa Gemini. prepare_video confere o pedido sem consumir cota. Gere apenas quando solicitado. Preserve request_id nas repetições. retry_video tenta novamente um vídeo falho sem nova cota. Não repita falhas automaticamente. Fotos recebem zoom, não animação corporal. Esta integração gera MP4 e não publica em redes sociais.']);
         }
         if ($m['method'] === 'ping') {
             return $this->result($id, (object) []);
@@ -111,9 +111,16 @@ class McpController extends Controller
         $read = ['readOnlyHint' => true, 'destructiveHint' => false, 'idempotentHint' => true, 'openWorldHint' => false];
 
         $file = $object(['download_url' => ['type' => 'string'], 'file_id' => ['type' => 'string'], 'mime_type' => ['type' => 'string'], 'file_name' => ['type' => 'string']], ['download_url', 'file_id']);
+        $extra = ['media_ids' => ['type' => 'array', 'maxItems' => 12, 'items' => ['type' => 'string', 'format' => 'uuid']],
+            'narration' => ['type' => 'boolean'], 'original_audio' => ['type' => 'boolean'],
+            'aspect_ratio' => ['type' => 'string', 'enum' => ['vertical', 'horizontal']],
+            'voice_provider' => ['type' => 'string', 'enum' => ['standard', 'elevenlabs']]];
         $plan = $object(['topic' => ['type' => 'string', 'maxLength' => 200], 'duration' => ['type' => 'integer', 'minimum' => 10, 'maximum' => 600], 'custom_script' => ['type' => 'string', 'maxLength' => 8000], 'photo_id' => ['type' => 'string', 'format' => 'uuid']], ['topic', 'duration', 'custom_script']);
 
-        return [
+        $plan['properties'] = array_merge($plan['properties'], $extra);
+        $tools = [
+            ['name' => 'upload_media', 'description' => 'Recebe um anexo real de foto JPG/PNG/HEIC/WebP até 20 MB ou vídeo MP4/MOV/WebM até 100 MB e 10 minutos. Salva privadamente, sem cota. Retorna media_id. Nunca invente download_url.', 'inputSchema' => $object(['file' => $file], ['file']), '_meta' => ['openai/fileParams' => ['file']], 'annotations' => ['readOnlyHint' => false, 'destructiveHint' => false, 'idempotentHint' => true, 'openWorldHint' => true]],
+            ['name' => 'list_media', 'description' => 'Lista fotos e vídeos privados, com IDs para media_ids em create_video.', 'inputSchema' => $object(), 'annotations' => $read],
             ['name' => 'upload_photo', 'description' => 'Recebe uma foto JPG/PNG anexada pelo usuário nesta conversa e salva privadamente no VideoGenius. Até 5 MB. Não consome cota de vídeos. Retorna photo_id para create_video. Repetir a mesma foto não duplica o arquivo. Use o anexo real, nunca invente uma URL.', 'inputSchema' => $object(['file' => $file], ['file']), '_meta' => ['openai/fileParams' => ['file']], 'annotations' => ['readOnlyHint' => false, 'destructiveHint' => false, 'idempotentHint' => true, 'openWorldHint' => true]],
             ['name' => 'prepare_video', 'description' => 'Confere foto, roteiro, configuração e cota antes de gerar; retorna o plano e o custo em cota. Não gera vídeo, não reserva cota. Escreva a narração em custom_script, sem instruções de câmera.', 'inputSchema' => $plan, 'annotations' => $read],
             ['name' => 'retry_video', 'description' => 'Repete um vídeo falho da conta com a mesma foto e roteiro, sem consumir nova cota. Use somente se o usuário solicitar ou autorizar nova tentativa, depois de avaliar o erro. request_id deve ser preservado para evitar repetição duplicada.', 'inputSchema' => $object(['video_id' => ['type' => 'integer', 'minimum' => 1], 'request_id' => ['type' => 'string', 'minLength' => 8, 'maxLength' => 100]], ['video_id', 'request_id']), 'annotations' => ['readOnlyHint' => false, 'destructiveHint' => false, 'idempotentHint' => true, 'openWorldHint' => true]],
@@ -124,6 +131,20 @@ class McpController extends Controller
             ['name' => 'get_video_download', 'description' => 'Cria um link de download do MP4 pronto válido por 30 minutos. Qualquer pessoa com o link pode baixá-lo até expirar.', 'inputSchema' => $video, 'annotations' => $read],
             ['name' => 'create_video', 'description' => 'Enfileira um vídeo narrado em português, usando foto própria (photo_id) ou clipes do Pixabay. Para fotos anexadas use upload_photo; para fotos já salvas use list_photos. A foto recebe zoom suave, sem animação da pessoa. Consome a cota mensal. Roteiro próprio obrigatório dispensa Gemini. Use o mesmo request_id numa repetição da mesma solicitação. Não gera filmagens novas com IA nem publica no YouTube.', 'inputSchema' => $object(['photo_id' => ['type' => 'string', 'format' => 'uuid', 'description' => 'Opcional: ID retornado por list_photos.'], 'topic' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 200], 'duration' => ['type' => 'integer', 'minimum' => 10, 'maximum' => 600], 'custom_script' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 8000], 'request_id' => ['type' => 'string', 'minLength' => 8, 'maxLength' => 100]], ['topic', 'duration', 'custom_script', 'request_id']), 'annotations' => ['readOnlyHint' => false, 'destructiveHint' => false, 'idempotentHint' => true, 'openWorldHint' => true]],
         ];
+        foreach ($tools as &$tool) {
+            if ($tool['name'] === 'create_video') {
+                $tool['inputSchema']['properties'] = array_merge($tool['inputSchema']['properties'], $extra);
+                unset($tool['inputSchema']['properties']['custom_script']['minLength']);
+                $tool['description'] .= ' Também aceita media_ids ordenados, narration=false (sem voz) e voice_provider=elevenlabs (consome créditos de voz).';
+            }
+        }
+
+        return $tools;
+    }
+
+    private function mediaRules(): array
+    {
+        return ['media_ids' => 'nullable|array|max:12|prohibits:photo_id', 'media_ids.*' => 'required|uuid|distinct', 'narration' => 'sometimes|boolean', 'original_audio' => 'sometimes|boolean', 'aspect_ratio' => 'sometimes|in:vertical,horizontal', 'voice_provider' => 'sometimes|in:standard,elevenlabs'];
     }
 
     private function details(Video $v): array
@@ -133,24 +154,39 @@ class McpController extends Controller
 
     private function call(User $u, string $name, array $a): array
     {
+        if ($name === 'upload_media') {
+            $d = Validator::make($a, ['file' => 'required|array', 'file.download_url' => 'required|string|max:16000', 'file.file_id' => 'required|string|max:255', 'file.file_name' => 'sometimes|string|max:255'])->validate();
+
+            return app(\App\Services\MediaImport::class)->fromAttachment($u, $d['file']);
+        }
+        if ($name === 'list_media') {
+            return ['upload_url' => rtrim(config('app.url'), '/').'/media', 'media' => DB::table('video_media')->where('user_id', $u->id)->latest()->limit(100)->get(['id', 'name', 'kind', 'duration', 'has_audio', 'created_at'])->all()];
+        }
         if ($name === 'upload_photo') {
             $d = Validator::make($a, ['file' => 'required|array', 'file.download_url' => 'required|string|max:16000', 'file.file_id' => 'required|string|max:255'])->validate();
 
             return app(\App\Services\PhotoImport::class)->fromAttachment($u, $d['file']);
         }
         if ($name === 'prepare_video') {
-            $d = Validator::make($a, ['topic' => 'required|string|max:200', 'duration' => 'required|integer|min:10|max:600', 'custom_script' => 'required|string|max:8000', 'photo_id' => 'nullable|uuid'])->validate();
+            $d = Validator::make($a, ['topic' => 'required|string|max:200', 'duration' => 'required|integer|min:10|max:600', 'custom_script' => [\Illuminate\Validation\Rule::requiredIf((bool) ($a['narration'] ?? true)), 'nullable', 'string', 'max:8000'], 'photo_id' => 'nullable|uuid'] + $this->mediaRules())->validate();
+            $media = app(\App\Services\MediaImport::class)->resolve($u, $d['media_ids'] ?? []);
+            if (($d['narration'] ?? true) && ($d['voice_provider'] ?? '') === 'elevenlabs' && (! $u->elevenlabs_api_key || ! $u->elevenlabs_voice_id)) {
+                throw ValidationException::withMessages(['voice_provider' => 'Conecte a ElevenLabs e escolha uma voz em /integrations/elevenlabs.']);
+            }
+            if (! ($d['narration'] ?? true) && ! $media) {
+                throw ValidationException::withMessages(['media_ids' => 'Envie seus arquivos para gerar sem narração.']);
+            }
             if (! empty($d['photo_id'])) {
                 $photo = DB::table('video_photos')->where('user_id', $u->id)->where('id', $d['photo_id'])->first();
                 if (! $photo || ! Storage::disk('local')->exists($photo->path)) {
                     throw ValidationException::withMessages(['photo_id' => 'Foto não encontrada nesta conta. Use upload_photo.']);
                 }
-            } elseif (! config('video.pixabay_key')) {
+            } elseif (! $media && ! config('video.pixabay_key')) {
                 throw ValidationException::withMessages(['configuration' => 'Configure Pixabay ou envie uma foto.']);
             }
             $can = $u->canGenerateVideo();
 
-            return ['plan' => $d, 'mode' => empty($d['photo_id']) ? 'stock_footage' : 'photo_zoom_vertical', 'can_generate' => $can, 'quota_cost' => 1, 'quota_consumed_now' => 0, 'remaining' => max(0, $u->monthly_video_quota - $u->videos_generated_this_month), 'duration_note' => 'A duração final acompanha a narração. Fotos recebem zoom, sem animar a pessoa.'];
+            return ['plan' => $d, 'voice_cost_note' => ($d['narration'] ?? true) && ($d['voice_provider'] ?? '') === 'elevenlabs' ? 'A geração consome créditos ElevenLabs conforme texto e voz; nenhum áudio foi gerado agora.' : 'Sem créditos ElevenLabs.', 'mode' => $media ? 'own_media' : (empty($d['photo_id']) ? 'stock_footage' : 'photo_zoom_vertical'), 'can_generate' => $can, 'quota_cost' => 1, 'quota_consumed_now' => 0, 'remaining' => max(0, $u->monthly_video_quota - $u->videos_generated_this_month), 'duration_note' => 'A duração final acompanha a narração. Fotos recebem zoom, sem animar a pessoa.'];
         }
         if ($name === 'retry_video') {
             $d = Validator::make($a, ['video_id' => 'required|integer|min:1', 'request_id' => 'required|string|min:8|max:100|regex:/^[a-zA-Z0-9_-]+$/'])->validate();
@@ -163,7 +199,7 @@ class McpController extends Controller
         if ($name === 'account_status') {
             $u->canGenerateVideo();
 
-            return ['monthly_quota' => $u->monthly_video_quota, 'used' => $u->videos_generated_this_month, 'remaining' => max(0, $u->monthly_video_quota - $u->videos_generated_this_month), 'pixabay_configured' => (bool) config('video.pixabay_key'), 'gemini_configured' => (bool) (config('video.gemini_key') && config('video.gemini_model')), 'custom_script_supported' => true, 'photo_video_supported' => true, 'attachment_upload_supported' => true, 'server_version' => '1.2.1', 'photo_upload_url' => rtrim(config('app.url'), '/').'/photos'];
+            return ['monthly_quota' => $u->monthly_video_quota, 'used' => $u->videos_generated_this_month, 'remaining' => max(0, $u->monthly_video_quota - $u->videos_generated_this_month), 'pixabay_configured' => (bool) config('video.pixabay_key'), 'gemini_configured' => (bool) (config('video.gemini_key') && config('video.gemini_model')), 'custom_script_supported' => true, 'photo_video_supported' => true, 'attachment_upload_supported' => true, 'server_version' => '1.3.0', 'own_video_supported' => true, 'media_upload_url' => rtrim(config('app.url'), '/').'/media', 'elevenlabs_configured' => (bool) ($u->elevenlabs_api_key && $u->elevenlabs_voice_id), 'elevenlabs_settings_url' => rtrim(config('app.url'), '/').'/integrations/elevenlabs', 'photo_upload_url' => rtrim(config('app.url'), '/').'/photos'];
         }
         if ($name === 'list_videos') {
             $d = Validator::make($a, ['page' => 'sometimes|integer|min:1|max:100000'])->validate();
@@ -173,13 +209,22 @@ class McpController extends Controller
             return ['videos' => $vs->take(20)->map(fn ($v) => $this->details($v))->values()->all(), 'next_page' => $vs->count() > 20 ? $page + 1 : null];
         }
         if ($name === 'create_video') {
-            $d = Validator::make($a, ['photo_id' => 'sometimes|nullable|uuid', 'topic' => 'required|string|max:200', 'duration' => 'required|integer|min:10|max:600', 'custom_script' => 'required|string|max:8000', 'request_id' => 'required|string|min:8|max:100|regex:/^[a-zA-Z0-9_-]+$/'])->validate();
-            if (empty($d['photo_id']) && ! config('video.pixabay_key')) {
+            $d = Validator::make($a, ['photo_id' => 'sometimes|nullable|uuid', 'topic' => 'required|string|max:200', 'duration' => 'required|integer|min:10|max:600', 'custom_script' => [\Illuminate\Validation\Rule::requiredIf((bool) ($a['narration'] ?? true)), 'nullable', 'string', 'max:8000'], 'request_id' => 'required|string|min:8|max:100|regex:/^[a-zA-Z0-9_-]+$/'] + $this->mediaRules())->validate();
+            if (empty($d['media_ids']) && empty($d['photo_id']) && ! config('video.pixabay_key')) {
                 throw ValidationException::withMessages(['configuration' => 'Configure a chave Pixabay no Render.']);
             }
-            $payload = [$d['topic'], (int) $d['duration'], $d['custom_script']];
+            $payload = [$d['topic'], (int) $d['duration'], $d['custom_script'] ?? ''];
             if (! empty($d['photo_id'])) {
                 $payload[] = $d['photo_id'];
+            }
+            $extras = [];
+            foreach (['media_ids', 'narration', 'original_audio', 'aspect_ratio', 'voice_provider'] as $field) {
+                if (array_key_exists($field, $d)) {
+                    $extras[$field] = $d[$field];
+                }
+            }
+            if ($extras) {
+                $payload[] = $extras;
             }
             $hash = hash('sha256', json_encode($payload));
 

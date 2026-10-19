@@ -13,6 +13,9 @@ use Throwable;
 class GenerateVideo implements ShouldQueue
 {
     private const ERRORS = [
+        'elevenlabs_not_configured' => 'Conecte a ElevenLabs e escolha uma voz em /integrations/elevenlabs.',
+        'elevenlabs_rejected' => 'A ElevenLabs recusou a geração. Confira a chave, a permissão Text to Speech, a voz e o saldo de créditos.',
+        'elevenlabs_uncertain' => 'A resposta da ElevenLabs foi interrompida. Verifique o histórico da ElevenLabs antes de gerar outro vídeo; uma nova cobrança automática foi bloqueada.',
         'photo_missing' => 'A foto original não foi encontrada. Envie novamente em /photos.',
         'no_stock_footage' => 'O Pixabay não encontrou clipes para este tema. Use poucas palavras ou envie uma foto.',
         'script_provider_failed' => 'Falha ao criar o roteiro com Gemini. Envie um roteiro próprio.',
@@ -47,8 +50,9 @@ class GenerateVideo implements ShouldQueue
             'GEMINI_API_KEY' => config('video.gemini_key') ?? '',
             'GEMINI_MODEL' => config('video.gemini_model') ?? '',
             'PIXABAY_API_KEY' => config('video.pixabay_key') ?? '',
+            'ELEVENLABS_API_KEY' => ($g->parameters['voice_provider'] ?? '') === 'elevenlabs' ? (\App\Models\User::findOrFail($v->user_id)->elevenlabs_api_key ?? '') : '',
         ]);
-        $process->setInput(json_encode(['topic' => $v->topic, 'script' => $v->generated_script, 'duration' => $g->parameters['duration'], 'directory' => Storage::disk('local')->path($dir), 'photo' => empty($g->parameters['photo_path']) ? null : Storage::disk('local')->path($g->parameters['photo_path'])]));
+        $process->setInput(json_encode(['media' => array_map(fn ($m) => array_merge($m, ['path' => Storage::disk('local')->path($m['path'])]), $g->parameters['media'] ?? []), 'narration' => $g->parameters['narration'] ?? true, 'original_audio' => $g->parameters['original_audio'] ?? true, 'aspect_ratio' => $g->parameters['aspect_ratio'] ?? 'vertical', 'voice_provider' => $g->parameters['voice_provider'] ?? 'standard', 'voice_id' => $g->parameters['voice_id'] ?? null, 'topic' => $v->topic, 'script' => $v->generated_script, 'duration' => $g->parameters['duration'], 'directory' => Storage::disk('local')->path($dir), 'photo' => empty($g->parameters['photo_path']) ? null : Storage::disk('local')->path($g->parameters['photo_path'])]));
         $process->setTimeout(1700);
         $buffer = '';
         $errorCode = 'worker_failed';

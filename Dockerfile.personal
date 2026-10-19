@@ -3,7 +3,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends git unzip libon
     && docker-php-ext-install pdo_sqlite mbstring pcntl \
     && a2enmod rewrite \
     && sed -i 's/80/10000/g' /etc/apache2/ports.conf /etc/apache2/sites-available/000-default.conf
-RUN printf 'upload_max_filesize=6M\npost_max_size=8M\n' > /usr/local/etc/php/conf.d/uploads.ini
+RUN printf 'upload_max_filesize=100M\npost_max_size=110M\nmax_execution_time=180\nmax_input_time=300\n' > /usr/local/etc/php/conf.d/uploads.ini
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 WORKDIR /var/www/html
 COPY . .

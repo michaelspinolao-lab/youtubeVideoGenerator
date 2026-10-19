@@ -26,5 +26,10 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        $exceptions->dontFlash(['api_key']);
+        $exceptions->render(function (\Illuminate\Http\Exceptions\PostTooLargeException $e, \Illuminate\Http\Request $r) {
+            if ($r->expectsJson()) {
+                return response()->json(['message' => 'Arquivo muito grande. Envie até 100 MB por vez.'], 413);
+            }
+        });
     })->create();

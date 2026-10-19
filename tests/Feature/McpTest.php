@@ -48,7 +48,7 @@ class McpTest extends TestCase
     public function test_protocol_discovery_and_bad_origin(): void
     {
         $this->rpc('initialize', ['protocolVersion' => '2025-06-18'])->assertOk()->assertJsonPath('result.serverInfo.name', 'videogenius');
-        $this->rpc('tools/list')->assertJsonCount(9, 'result.tools');
+        $this->rpc('tools/list')->assertJsonCount(11, 'result.tools');
         $this->rpc('bogus')->assertJsonPath('error.code', -32601);
         $this->withHeader('Origin', 'https://evil.example')->rpc('tools/list')->assertForbidden();
     }
@@ -237,5 +237,33 @@ class McpTest extends TestCase
         $other = User::factory()->create();
         $v->update(['user_id' => $other->id]);
         $this->tool('retry_video', ['video_id' => $v->id, 'request_id' => 'retry-another'])->assertJsonPath('result.isError', true);
+    }
+
+    public function test_media_plan_and_creation_preserve_order_options_and_idempotency(): void
+    {
+        Queue::fake();
+        Storage::fake('local');
+        config(['video.pixabay_key' => null]);
+        $ids = [];
+        foreach (['first', 'second'] as $name) {
+            $id = (string) \Illuminate\Support\Str::uuid();
+            $ids[] = $id;
+            Storage::disk('local')->put('media/'.$id.'.jpg', 'fixture');
+            DB::table('video_media')->insert(['id' => $id, 'user_id' => $this->owner->id, 'path' => 'media/'.$id.'.jpg', 'name' => $name, 'kind' => 'photo', 'mime_type' => 'image/jpeg', 'sha256' => hash('sha256', $name), 'size_bytes' => 7, 'width' => 200, 'height' => 200, 'has_audio' => false, 'created_at' => now(), 'updated_at' => now()]);
+        }
+        $this->tool('list_media')->assertJsonPath('result.isError', false);
+        $data = ['topic' => 'Minha montagem', 'duration' => 30, 'custom_script' => '', 'media_ids' => $ids, 'narration' => false, 'original_audio' => true, 'aspect_ratio' => 'horizontal'];
+        $plan = json_decode($this->tool('prepare_video', $data)->assertJsonPath('result.isError', false)->json('result.content.0.text'), true);
+        $this->assertSame('own_media', $plan['mode']);
+        $this->assertSame(0, $this->owner->fresh()->videos_generated_this_month);
+        $data['request_id'] = 'media-request-12345';
+        $this->tool('create_video', $data)->assertJsonPath('result.isError', false);
+        $this->tool('create_video', $data)->assertJsonPath('result.isError', false);
+        $g = \App\Models\VideoGeneration::firstOrFail();
+        $this->assertSame($ids, array_column($g->parameters['media'], 'id'));
+        $data['media_ids'] = array_reverse($ids);
+        $this->tool('create_video', $data)->assertJsonPath('result.isError', true);
+        $this->assertSame(1, $this->owner->fresh()->videos_generated_this_month);
+        Queue::assertPushed(GenerateVideo::class,1);
     }
 }
